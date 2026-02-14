@@ -1,7 +1,7 @@
 {
-  "name": "chrome-extension-typescript-starter",
-  "version": "1.0.0",
-  "description": "chrome-extension-typescript-starter",
+  "name": "chess-tilt-guard",
+  "version": "0.1.0",
+  "description": "Detect and track chess activity on chess.com and lichess.org",
   "main": "index.js",
   "scripts": {
     "watch": "webpack --config webpack/webpack.dev.js --watch",
