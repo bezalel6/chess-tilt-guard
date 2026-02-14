@@ -1,35 +1,42 @@
 {
   "manifest_version": 3,
-
-  "name": "Chrome Extension TypeScript Starter",
-  "description": "Chrome Extension, TypeScript, Visual Studio Code",
-  "version": "1.0",
-
-  "options_ui": {
-    "page": "options.html"
-  },
+  "name": "Chess Tilt Guard",
+  "description": "Detect and track chess activity on chess.com and lichess.org",
+  "version": "0.1.0",
 
   "action": {
     "default_icon": "icon.png",
     "default_popup": "popup.html"
   },
 
-  "content_scripts": [
-      {
-          "matches": ["<all_urls>"],
-          "js": ["js/vendor.js", "js/content_script.js"]
-      }
-  ],
-
   "background": {
     "service_worker": "js/background.js"
   },
 
-  "permissions": [
-    "storage"
+  "content_scripts": [
+    {
+      "matches": ["*://*.chess.com/*"],
+      "js": ["js/content_chess_com.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.lichess.org/*"],
+      "js": ["js/content_lichess.js"],
+      "run_at": "document_idle"
+    }
   ],
 
+  "web_accessible_resources": [
+    {
+      "resources": ["js/bridge_chess_com.js"],
+      "matches": ["*://*.chess.com/*"]
+    }
+  ],
+
+  "permissions": ["storage"],
+
   "host_permissions": [
-    "<all_urls>"
+    "*://*.chess.com/*",
+    "*://*.lichess.org/*"
   ]
 }

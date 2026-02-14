@@ -6,9 +6,10 @@ const srcDir = path.join(__dirname, "..", "src");
 module.exports = {
     entry: {
       popup: path.join(srcDir, 'popup.tsx'),
-      options: path.join(srcDir, 'options.tsx'),
       background: path.join(srcDir, 'background.ts'),
-      content_script: path.join(srcDir, 'content_script.tsx'),
+      content_chess_com: path.join(srcDir, 'content', 'chess-com', 'content.ts'),
+      content_lichess: path.join(srcDir, 'content', 'lichess', 'content.ts'),
+      bridge_chess_com: path.join(srcDir, 'content', 'chess-com', 'bridge.ts'),
     },
     output: {
         path: path.join(__dirname, "../dist/js"),
@@ -18,7 +19,8 @@ module.exports = {
         splitChunks: {
             name: "vendor",
             chunks(chunk) {
-              return chunk.name !== 'background';
+              // Only split chunks for popup (content scripts must be self-contained)
+              return chunk.name === 'popup';
             }
         },
     },
