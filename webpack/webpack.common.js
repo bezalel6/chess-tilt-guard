@@ -9,7 +9,6 @@ module.exports = {
       background: path.join(srcDir, 'background.ts'),
       content_chess_com: path.join(srcDir, 'content', 'chess-com', 'content.ts'),
       content_lichess: path.join(srcDir, 'content', 'lichess', 'content.ts'),
-      bridge_chess_com: path.join(srcDir, 'content', 'chess-com', 'bridge.ts'),
     },
     output: {
         path: path.join(__dirname, "../dist/js"),

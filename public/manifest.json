@@ -26,13 +26,6 @@
     }
   ],
 
-  "web_accessible_resources": [
-    {
-      "resources": ["js/bridge_chess_com.js"],
-      "matches": ["*://*.chess.com/*"]
-    }
-  ],
-
   "permissions": ["storage"],
 
   "host_permissions": [

@@ -1,4 +1,5 @@
 import { sendChessEvent, generateEventId } from '../shared/messaging';
+import { EventResult } from '../../types';
 
 const seenPuzzles = new Set<string>();
 let observing = false;
@@ -21,8 +22,9 @@ export function initLichessPuzzleDetector(): void {
         if (!(node instanceof HTMLElement)) continue;
 
         const feedback =
-          node.matches?.('.puzzle__feedback.after') ? node
-          : node.querySelector?.('.puzzle__feedback.after');
+          node.matches?.('.puzzle__feedback.after')
+            ? node
+            : node.querySelector?.('.puzzle__feedback.after');
 
         if (feedback) {
           handlePuzzleResult();
@@ -39,13 +41,17 @@ function handlePuzzleResult(): void {
   const sessionLinks = document.querySelectorAll('.puzzle__session a');
   const lastLink = sessionLinks[sessionLinks.length - 1];
 
-  let result: 'win' | 'loss';
+  let result: EventResult;
+  let sessionDetected = false;
+
   if (lastLink?.classList.contains('result-true')) {
     result = 'win';
+    sessionDetected = true;
   } else if (lastLink?.classList.contains('result-false')) {
     result = 'loss';
+    sessionDetected = true;
   } else {
-    // Fallback: check the feedback content
+    // Fallback: check the feedback content directly
     const feedback = document.querySelector('.puzzle__feedback.after');
     const icon = feedback?.querySelector('.complete, .good');
     result = icon ? 'win' : 'loss';
@@ -55,6 +61,10 @@ function handlePuzzleResult(): void {
   if (seenPuzzles.has(dedupKey)) return;
   seenPuzzles.add(dedupKey);
 
+  // Extract puzzle ID from URL: /training/AbCdE
+  const urlParts = location.pathname.split('/');
+  const puzzleId = urlParts[urlParts.length - 1] || undefined;
+
   sendChessEvent({
     id: generateEventId('lichess', 'puzzle'),
     type: 'puzzle',
@@ -62,5 +72,20 @@ function handlePuzzleResult(): void {
     platform: 'lichess',
     timestamp: Date.now(),
     url: location.href,
+    details: {
+      detectionMethod: sessionDetected
+        ? 'dom-puzzle-session-bar'
+        : 'dom-puzzle-feedback-fallback',
+      matchedSelector: sessionDetected
+        ? '.puzzle__session a.result-true / .result-false'
+        : '.puzzle__feedback.after .complete / .good',
+      puzzleId,
+      extra: {
+        sessionLinkCount: sessionLinks.length,
+        lastLinkClasses: lastLink
+          ? Array.from(lastLink.classList).join(' ')
+          : 'none',
+      },
+    },
   });
 }
