@@ -1,7 +1,7 @@
-import { ChessEvent } from '../../types';
-import { STORAGE_KEY } from '../../constants';
+import { ChessEvent } from "../../types";
+import { STORAGE_KEY } from "../../constants";
 
-const HOST_ID = 'chess-tilt-guard-overlay';
+const HOST_ID = "chess-tilt-guard-overlay";
 
 const STYLES = `
   :host {
@@ -216,7 +216,7 @@ const STYLES = `
 
 function getRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
@@ -226,17 +226,22 @@ function getRelativeTime(timestamp: number): string {
 }
 
 function buildHeadline(event: ChessEvent): string {
-  const resultLabel = event.result.charAt(0).toUpperCase() + event.result.slice(1);
-  const typeLabel = event.type === 'game' ? 'Game' : 'Puzzle';
+  const resultLabel =
+    event.result.charAt(0).toUpperCase() + event.result.slice(1);
+  const typeLabel = event.type === "game" ? "Game" : "Puzzle";
 
-  if (event.type === 'game' && event.details.playerColor) {
-    const color = event.details.playerColor.charAt(0).toUpperCase() + event.details.playerColor.slice(1);
-    const reason = event.details.endReason ? ` - ${event.details.endReason}` : '';
+  if (event.type === "game" && event.details.playerColor) {
+    const color =
+      event.details.playerColor.charAt(0).toUpperCase() +
+      event.details.playerColor.slice(1);
+    const reason = event.details.endReason
+      ? ` - ${event.details.endReason}`
+      : "";
     return `${resultLabel} as ${color}${reason}`;
   }
 
-  if (event.type === 'puzzle') {
-    return `${typeLabel} ${event.result === 'win' ? 'Solved' : 'Failed'}`;
+  if (event.type === "puzzle") {
+    return `${typeLabel} ${event.result === "win" ? "Solved" : "Failed"}`;
   }
 
   return `${resultLabel} - ${typeLabel}`;
@@ -250,15 +255,16 @@ function renderDetailRows(event: ChessEvent): string {
   const d = event.details;
   const rows: Array<[string, string]> = [];
 
-  rows.push(['method', d.detectionMethod]);
-  if (d.matchedSelector) rows.push(['selector', d.matchedSelector]);
-  if (d.rawResult) rows.push(['raw_result', d.rawResult]);
-  if (d.rawPlayingAs !== undefined) rows.push(['playing_as', String(d.rawPlayingAs)]);
-  if (d.playerColor) rows.push(['color', d.playerColor]);
-  if (d.endReason) rows.push(['end_reason', d.endReason]);
-  if (d.puzzleId) rows.push(['puzzle_id', d.puzzleId]);
-  rows.push(['url', event.url]);
-  rows.push(['event_id', event.id]);
+  rows.push(["method", d.detectionMethod]);
+  if (d.matchedSelector) rows.push(["selector", d.matchedSelector]);
+  if (d.rawResult) rows.push(["raw_result", d.rawResult]);
+  if (d.rawPlayingAs !== undefined)
+    rows.push(["playing_as", String(d.rawPlayingAs)]);
+  if (d.playerColor) rows.push(["color", d.playerColor]);
+  if (d.endReason) rows.push(["end_reason", d.endReason]);
+  if (d.puzzleId) rows.push(["puzzle_id", d.puzzleId]);
+  rows.push(["url", event.url]);
+  rows.push(["event_id", event.id]);
 
   if (d.extra) {
     for (const [k, v] of Object.entries(d.extra)) {
@@ -274,15 +280,15 @@ function renderDetailRows(event: ChessEvent): string {
           <span class="ctg-detail-value">${escapeHtml(value)}</span>
         </div>`
     )
-    .join('');
+    .join("");
 }
 
 function escapeHtml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function renderEvent(event: ChessEvent, index: number): string {
@@ -291,13 +297,17 @@ function renderEvent(event: ChessEvent, index: number): string {
       <div class="ctg-event-row" data-toggle="${index}">
         <div class="ctg-dot ${event.result}"></div>
         <div class="ctg-event-summary">
-          <div class="ctg-event-headline">${escapeHtml(buildHeadline(event))}</div>
+          <div class="ctg-event-headline">${escapeHtml(
+            buildHeadline(event)
+          )}</div>
           <div class="ctg-event-meta">${escapeHtml(buildMetaLine(event))}</div>
         </div>
         <div class="ctg-event-time">${getRelativeTime(event.timestamp)}</div>
         <span class="ctg-expand-hint" data-hint="${index}">&#9656;</span>
       </div>
-      <div class="ctg-details" data-details="${index}">${renderDetailRows(event)}</div>
+      <div class="ctg-details" data-details="${index}">${renderDetailRows(
+    event
+  )}</div>
     </div>
   `;
 }
@@ -306,35 +316,35 @@ function renderList(events: ChessEvent[]): string {
   if (events.length === 0) {
     return '<div class="ctg-empty">No events yet. Play a game or solve a puzzle.</div>';
   }
-  return events.map((e, i) => renderEvent(e, i)).join('');
+  return events.map((e, i) => renderEvent(e, i)).join("");
 }
 
 export function initOverlay(): void {
   // Prevent double-init (SPA navigations)
   if (document.getElementById(HOST_ID)) return;
 
-  const host = document.createElement('div');
+  const host = document.createElement("div");
   host.id = HOST_ID;
   document.body.appendChild(host);
 
-  const shadow = host.attachShadow({ mode: 'closed' });
+  const shadow = host.attachShadow({ mode: "closed" });
 
   // Inject styles
-  const styleEl = document.createElement('style');
+  const styleEl = document.createElement("style");
   styleEl.textContent = STYLES;
   shadow.appendChild(styleEl);
 
   // Build panel
-  const panel = document.createElement('div');
-  panel.className = 'ctg-panel';
+  const panel = document.createElement("div");
+  panel.className = "ctg-panel";
   shadow.appendChild(panel);
 
-  const header = document.createElement('div');
-  header.className = 'ctg-header';
+  const header = document.createElement("div");
+  header.className = "ctg-header";
   panel.appendChild(header);
 
-  const list = document.createElement('div');
-  list.className = 'ctg-list';
+  const list = document.createElement("div");
+  list.className = "ctg-list";
   panel.appendChild(list);
 
   let collapsed = false;
@@ -345,16 +355,18 @@ export function initOverlay(): void {
     header.innerHTML = `
       <div class="ctg-title">
         CTG
-        ${count > 0 ? `<span class="ctg-badge">${count}</span>` : ''}
+        ${count > 0 ? `<span class="ctg-badge">${count}</span>` : ""}
       </div>
       <div class="ctg-controls">
         <button class="ctg-btn ctg-clear-btn">Clear</button>
-        <span class="ctg-chevron">${collapsed ? '▲' : '▼'}</span>
+        <span class="ctg-chevron">${collapsed ? "▲" : "▼"}</span>
       </div>
     `;
 
-    const clearBtn = header.querySelector('.ctg-clear-btn') as HTMLButtonElement;
-    clearBtn.addEventListener('click', (e) => {
+    const clearBtn = header.querySelector(
+      ".ctg-clear-btn"
+    ) as HTMLButtonElement;
+    clearBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       chrome.storage.local.remove(STORAGE_KEY);
     });
@@ -367,21 +379,21 @@ export function initOverlay(): void {
   }
 
   // Toggle panel collapse
-  header.addEventListener('click', () => {
+  header.addEventListener("click", () => {
     collapsed = !collapsed;
-    panel.classList.toggle('collapsed', collapsed);
+    panel.classList.toggle("collapsed", collapsed);
     renderHeader();
   });
 
   // Toggle individual event details (delegated)
-  list.addEventListener('click', (e) => {
-    const row = (e.target as HTMLElement).closest<HTMLElement>('[data-toggle]');
+  list.addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>("[data-toggle]");
     if (!row) return;
     const idx = row.dataset.toggle!;
     const details = list.querySelector<HTMLElement>(`[data-details="${idx}"]`);
     const hint = list.querySelector<HTMLElement>(`[data-hint="${idx}"]`);
-    if (details) details.classList.toggle('open');
-    if (hint) hint.classList.toggle('open');
+    if (details) details.classList.toggle("open");
+    if (hint) hint.classList.toggle("open");
   });
 
   // Initial load
@@ -399,7 +411,7 @@ export function initOverlay(): void {
   // Periodically refresh relative timestamps
   setInterval(() => {
     if (!collapsed && currentEvents.length > 0) {
-      const timeEls = list.querySelectorAll('.ctg-event-time');
+      const timeEls = list.querySelectorAll(".ctg-event-time");
       timeEls.forEach((el, i) => {
         if (currentEvents[i]) {
           el.textContent = getRelativeTime(currentEvents[i].timestamp);

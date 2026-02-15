@@ -1,7 +1,7 @@
-export type EventType = 'game' | 'puzzle';
-export type EventResult = 'win' | 'loss' | 'draw';
-export type Platform = 'chess.com' | 'lichess';
-export type PlayerColor = 'white' | 'black';
+export type EventType = "game" | "puzzle";
+export type EventResult = "win" | "loss" | "draw";
+export type Platform = "chess.com" | "lichess";
+export type PlayerColor = "white" | "black";
 
 /** Technical details attached to every event for debugging. */
 export interface EventDetails {
@@ -35,13 +35,13 @@ export interface ChessEvent {
 
 /** Message sent from content scripts to the background service worker. */
 export interface ChessEventMessage {
-  kind: 'CHESS_EVENT';
+  kind: "CHESS_EVENT";
   payload: ChessEvent;
 }
 
 /** Message asking background to check pending chess.com games via API. */
 export interface CheckPendingGamesMessage {
-  kind: 'CHECK_PENDING_GAMES';
+  kind: "CHECK_PENDING_GAMES";
   username: string;
 }
 
@@ -58,7 +58,7 @@ export interface ChessComApiPlayer {
   rating: number;
   result: string;
   username: string;
-  '@id': string;
+  "@id": string;
 }
 
 /** Shape of a game object in the chess.com public API response. */

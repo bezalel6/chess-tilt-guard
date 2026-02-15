@@ -1,15 +1,16 @@
-import { PendingGame } from '../../types';
+import { PendingGame } from "../../types";
 import {
   PENDING_GAMES_KEY,
   CACHED_USERNAME_KEY,
   STORAGE_KEY,
   MAX_PENDING_AGE_MS,
-} from '../../constants';
+} from "../../constants";
 
-const LOG = '[CTG GameDetector]';
+const LOG = "[CTG GameDetector]";
 
 /** URL patterns for chess.com game pages. Matches /game/123, /game/live/123, /game/daily/123 */
-const GAME_URL_RE = /^https?:\/\/(www\.)?chess\.com\/game\/(?:(?:live|daily)\/)?(\d+)/;
+const GAME_URL_RE =
+  /^https?:\/\/(www\.)?chess\.com\/game\/(?:(?:live|daily)\/)?(\d+)/;
 
 /**
  * Selectors to find the logged-in user's username on the page.
@@ -19,10 +20,10 @@ const GAME_URL_RE = /^https?:\/\/(www\.)?chess\.com\/game\/(?:(?:live|daily)\/)?
  */
 const USERNAME_SELECTORS = [
   // Bottom player area username (most reliable on game pages)
-  '#board-layout-player-bottom .user-tagline-username',
+  "#board-layout-player-bottom .user-tagline-username",
   '#board-layout-player-bottom a[data-test-element="user-tagline-username"]',
-  '#board-layout-player-bottom cc-user-username-component',
-  '#board-layout-player-bottom .user-tagline-compact-username',
+  "#board-layout-player-bottom cc-user-username-component",
+  "#board-layout-player-bottom .user-tagline-compact-username",
   // Generic navigation profile link (works on any page)
   'a[href^="/member/"]',
 ];
@@ -35,8 +36,8 @@ function findUsernameFromDom(): string | null {
     if (!el) continue;
 
     // For <a href="/member/xxx"> links, parse from href
-    if (sel.includes('/member/')) {
-      const href = el.getAttribute('href');
+    if (sel.includes("/member/")) {
+      const href = el.getAttribute("href");
       const match = href?.match(/\/member\/([^/?#]+)/);
       if (match) return match[1].toLowerCase();
       continue;
@@ -97,11 +98,12 @@ async function addPendingGame(gameUrl: string): Promise<void> {
   // Already resolved as an event?
   const eventsData = await chrome.storage.local.get(STORAGE_KEY);
   const events = eventsData[STORAGE_KEY] ?? [];
-  if (events.some((e: { url: string }) => extractGameId(e.url) === gameId)) return;
+  if (events.some((e: { url: string }) => extractGameId(e.url) === gameId))
+    return;
 
   pending.push({ gameUrl, seenAt: Date.now() });
   await setPendingGames(pending);
-  console.log(LOG, 'Added pending game:', gameUrl, '(id:', gameId, ')');
+  console.log(LOG, "Added pending game:", gameUrl, "(id:", gameId, ")");
 }
 
 // ── Game page detection ───────────────────────────────────────────────
@@ -120,7 +122,7 @@ function getGameUrlFromPage(): string | null {
  * Then trigger a check for any pending games via background.
  */
 export function initChessComGameDetector(): void {
-  console.log(LOG, 'Initializing on', location.href);
+  console.log(LOG, "Initializing on", location.href);
 
   // Step 1: If on a game page, register it as pending
   const gameUrl = getGameUrlFromPage();
@@ -129,10 +131,10 @@ export function initChessComGameDetector(): void {
     setTimeout(async () => {
       const username = await resolveUsername();
       if (username) {
-        console.log(LOG, 'Detected user:', username, 'on game page:', gameUrl);
+        console.log(LOG, "Detected user:", username, "on game page:", gameUrl);
         await addPendingGame(gameUrl);
       } else {
-        console.warn(LOG, 'Could not find username on game page');
+        console.warn(LOG, "Could not find username on game page");
         // Still add the pending game — username might be cached or found later
         await addPendingGame(gameUrl);
       }
@@ -148,7 +150,7 @@ export function initChessComGameDetector(): void {
 async function requestPendingCheck(): Promise<void> {
   const username = await resolveUsername();
   if (!username) {
-    console.log(LOG, 'No username available, skipping pending check');
+    console.log(LOG, "No username available, skipping pending check");
     return;
   }
 
@@ -161,10 +163,16 @@ async function requestPendingCheck(): Promise<void> {
   }
 
   if (fresh.length === 0) {
-    console.log(LOG, 'No pending games to check');
+    console.log(LOG, "No pending games to check");
     return;
   }
 
-  console.log(LOG, 'Checking', fresh.length, 'pending game(s) for user:', username);
-  chrome.runtime.sendMessage({ kind: 'CHECK_PENDING_GAMES', username });
+  console.log(
+    LOG,
+    "Checking",
+    fresh.length,
+    "pending game(s) for user:",
+    username
+  );
+  chrome.runtime.sendMessage({ kind: "CHECK_PENDING_GAMES", username });
 }

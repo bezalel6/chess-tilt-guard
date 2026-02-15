@@ -1,5 +1,5 @@
-import { ChessEvent } from './types';
-import { STORAGE_KEY, MAX_EVENTS } from './constants';
+import { ChessEvent } from "./types";
+import { STORAGE_KEY, MAX_EVENTS } from "./constants";
 
 export async function getEvents(): Promise<ChessEvent[]> {
   const data = await chrome.storage.local.get(STORAGE_KEY);
