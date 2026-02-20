@@ -75,4 +75,38 @@ export interface ChessComApiGame {
   accuracies?: { white: number; black: number };
 }
 
-export type BackgroundMessage = ChessEventMessage | CheckPendingGamesMessage;
+/** Message asking background to sync recent games for a platform via API. */
+export interface SyncGamesMessage {
+  kind: "SYNC_GAMES";
+  platform: Platform;
+  username: string;
+}
+
+/** Shape of a player in the Lichess API game response (NDJSON). */
+export interface LichessApiPlayer {
+  user?: { name: string; id: string };
+  rating?: number;
+  ratingDiff?: number;
+}
+
+/** Shape of a game object from the Lichess API (NDJSON). */
+export interface LichessApiGame {
+  id: string;
+  rated: boolean;
+  variant: string;
+  speed: string;
+  perf: string;
+  createdAt: number;
+  lastMoveAt: number;
+  status: string;
+  winner?: "white" | "black";
+  players: {
+    white: LichessApiPlayer;
+    black: LichessApiPlayer;
+  };
+}
+
+export type BackgroundMessage =
+  | ChessEventMessage
+  | CheckPendingGamesMessage
+  | SyncGamesMessage;

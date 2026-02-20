@@ -4,3 +4,7 @@ export const CACHED_USERNAME_KEY = "chess_tilt_guard_username";
 export const MAX_EVENTS = 200;
 export const MAX_PENDING_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export const OVERLAY_VISIBLE_KEY = "chess_tilt_guard_overlay_visible";
+export const CACHED_LICHESS_USERNAME_KEY = "chess_tilt_guard_lichess_username";
+export const LAST_SYNC_KEY = "chess_tilt_guard_last_sync";
+export const MAX_STACK_SIZE_KEY = "chess_tilt_guard_max_stack_size";
+export const DEFAULT_MAX_STACK_SIZE = 20;

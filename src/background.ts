@@ -10,6 +10,7 @@ import { addEvent } from "./storage";
 import { PENDING_GAMES_KEY, STORAGE_KEY } from "./constants";
 import type { PendingGame } from "./types";
 import { computeStreakInfo } from "./content/shared/blocking-logic";
+import { syncPlatform } from "./background/api-sync";
 
 const LOG = "[CTG Background]";
 
@@ -258,6 +259,16 @@ chrome.runtime.onMessage.addListener(
         .then(() => sendResponse({ success: true }))
         .catch((err) => {
           console.error(LOG, "Failed to check pending games:", err);
+          sendResponse({ success: false });
+        });
+      return true;
+    }
+
+    if (message.kind === "SYNC_GAMES") {
+      syncPlatform(message.platform, message.username)
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => {
+          console.error(LOG, "Failed to sync games:", err);
           sendResponse({ success: false });
         });
       return true;

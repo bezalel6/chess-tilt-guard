@@ -1,4 +1,4 @@
-import { sendChessEvent, generateEventId } from "../shared/messaging";
+import { sendChessEvent } from "../shared/messaging";
 import { EventResult, PlayerColor } from "../../types";
 
 const seenResults = new Set<string>();
@@ -84,7 +84,7 @@ function handleGameResult(resultWrap: HTMLElement): void {
   const gameId = pathParts[1] ?? "";
 
   sendChessEvent({
-    id: generateEventId("lichess", "game"),
+    id: `lichess-game-${gameId}`,
     type: "game",
     result,
     platform: "lichess",

@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ChessEvent, Platform } from "./types";
-import { STORAGE_KEY, OVERLAY_VISIBLE_KEY } from "./constants";
+import {
+  STORAGE_KEY,
+  OVERLAY_VISIBLE_KEY,
+  MAX_STACK_SIZE_KEY,
+  DEFAULT_MAX_STACK_SIZE,
+} from "./constants";
 import {
   BlockingState,
   computeBlockingState,
@@ -181,14 +186,19 @@ const Popup: React.FC = () => {
     puzzleWinsNeeded: 0,
   });
   const [overlayVisible, setOverlayVisible] = useState(true);
+  const [maxStackSize, setMaxStackSize] = useState(DEFAULT_MAX_STACK_SIZE);
 
   useEffect(() => {
-    chrome.storage.local.get([STORAGE_KEY, OVERLAY_VISIBLE_KEY], (data) => {
-      const stored = data[STORAGE_KEY] ?? [];
-      setEvents(stored);
-      setBlockingState(computeBlockingState(stored));
-      setOverlayVisible(data[OVERLAY_VISIBLE_KEY] !== false);
-    });
+    chrome.storage.local.get(
+      [STORAGE_KEY, OVERLAY_VISIBLE_KEY, MAX_STACK_SIZE_KEY],
+      (data) => {
+        const stored = data[STORAGE_KEY] ?? [];
+        setEvents(stored);
+        setBlockingState(computeBlockingState(stored));
+        setOverlayVisible(data[OVERLAY_VISIBLE_KEY] !== false);
+        setMaxStackSize(data[MAX_STACK_SIZE_KEY] ?? DEFAULT_MAX_STACK_SIZE);
+      }
+    );
 
     const listener = (changes: {
       [key: string]: chrome.storage.StorageChange;
@@ -216,6 +226,12 @@ const Popup: React.FC = () => {
     const next = !overlayVisible;
     chrome.storage.local.set({ [OVERLAY_VISIBLE_KEY]: next });
     setOverlayVisible(next);
+  };
+
+  const updateMaxStackSize = (value: number) => {
+    const clamped = Math.max(5, Math.min(50, value));
+    setMaxStackSize(clamped);
+    chrome.storage.local.set({ [MAX_STACK_SIZE_KEY]: clamped });
   };
 
   return (
@@ -256,6 +272,37 @@ const Popup: React.FC = () => {
           </button>
           <button onClick={clearHistory} style={btnStyle}>
             Clear
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "6px 12px",
+          borderBottom: "1px solid #2d2d44",
+          fontSize: 11,
+          color: "#888",
+        }}
+      >
+        <span>Max events</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={() => updateMaxStackSize(maxStackSize - 5)}
+            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
+          >
+            &minus;
+          </button>
+          <span style={{ color: "#e0e0e0", minWidth: 20, textAlign: "center" }}>
+            {maxStackSize}
+          </span>
+          <button
+            onClick={() => updateMaxStackSize(maxStackSize + 5)}
+            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
+          >
+            +
           </button>
         </div>
       </div>
