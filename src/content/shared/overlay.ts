@@ -1,13 +1,20 @@
 import { ChessEvent } from "../../types";
-import { STORAGE_KEY } from "../../constants";
+import { STORAGE_KEY, OVERLAY_VISIBLE_KEY } from "../../constants";
+import { getPlatformLogo } from "./logos";
 
 const HOST_ID = "chess-tilt-guard-overlay";
+
+const RESULT_COLORS: Record<string, { border: string; bg: string }> = {
+  win: { border: "#4caf50", bg: "rgba(76, 175, 80, 0.08)" },
+  loss: { border: "#f44336", bg: "rgba(244, 67, 54, 0.08)" },
+  draw: { border: "#9e9e9e", bg: "rgba(158, 158, 158, 0.08)" },
+};
 
 const STYLES = `
   :host {
     all: initial;
     font-family: system-ui, -apple-system, sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     color: #e0e0e0;
   }
 
@@ -15,11 +22,11 @@ const STYLES = `
     position: fixed;
     bottom: 16px;
     right: 16px;
-    width: 340px;
+    width: 200px;
     max-height: 420px;
     background: #1a1a2e;
     border: 1px solid #2d2d44;
-    border-radius: 10px;
+    border-radius: 8px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     z-index: 2147483647;
     display: flex;
@@ -29,14 +36,18 @@ const STYLES = `
   }
 
   .ctg-panel.collapsed {
-    max-height: 40px;
+    max-height: 32px;
+  }
+
+  .ctg-panel.hidden {
+    display: none;
   }
 
   .ctg-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: 6px 8px;
     background: #16162a;
     border-bottom: 1px solid #2d2d44;
     cursor: pointer;
@@ -46,27 +57,27 @@ const STYLES = `
 
   .ctg-title {
     font-weight: 700;
-    font-size: 13px;
+    font-size: 11px;
     color: #fff;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
   }
 
   .ctg-badge {
     background: #4caf50;
     color: #fff;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 10px;
-    min-width: 16px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    min-width: 14px;
     text-align: center;
   }
 
   .ctg-controls {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     align-items: center;
   }
 
@@ -74,10 +85,10 @@ const STYLES = `
     background: none;
     border: 1px solid rgba(255,255,255,0.2);
     color: #aaa;
-    padding: 2px 8px;
-    border-radius: 4px;
+    padding: 1px 6px;
+    border-radius: 3px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 10px;
     transition: color 0.15s, border-color 0.15s;
   }
 
@@ -86,8 +97,26 @@ const STYLES = `
     border-color: rgba(255,255,255,0.4);
   }
 
-  .ctg-chevron {
+  .ctg-close-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #999;
     font-size: 14px;
+    cursor: pointer;
+    padding: 1px 4px;
+    line-height: 1;
+    border-radius: 3px;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+  }
+
+  .ctg-close-btn:hover {
+    color: #f44336;
+    background: rgba(244, 67, 54, 0.15);
+    border-color: rgba(244, 67, 54, 0.3);
+  }
+
+  .ctg-chevron {
+    font-size: 12px;
     color: #aaa;
     transition: transform 0.25s ease;
   }
@@ -103,49 +132,44 @@ const STYLES = `
   }
 
   .ctg-list::-webkit-scrollbar {
-    width: 5px;
+    width: 4px;
   }
   .ctg-list::-webkit-scrollbar-track {
     background: transparent;
   }
   .ctg-list::-webkit-scrollbar-thumb {
     background: #2d2d44;
-    border-radius: 3px;
+    border-radius: 2px;
   }
 
   .ctg-empty {
-    padding: 28px 16px;
+    padding: 20px 10px;
     text-align: center;
     color: #666;
-    font-size: 12px;
+    font-size: 10px;
   }
 
   .ctg-event {
-    padding: 8px 12px;
+    padding: 5px 8px;
     border-bottom: 1px solid #2d2d44;
+    border-left: 3px solid transparent;
   }
 
   .ctg-event-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    user-select: none;
+    gap: 6px;
   }
 
-  .ctg-event-row:hover {
-    opacity: 0.85;
-  }
-
-  .ctg-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
+  .ctg-event-logo {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
   }
-  .ctg-dot.win  { background: #4caf50; }
-  .ctg-dot.loss { background: #f44336; }
-  .ctg-dot.draw { background: #9e9e9e; }
+
+  .ctg-event-logo svg {
+    display: block;
+  }
 
   .ctg-event-summary {
     flex: 1;
@@ -154,133 +178,39 @@ const STYLES = `
 
   .ctg-event-headline {
     font-weight: 600;
-    font-size: 12px;
+    font-size: 11px;
     color: #e0e0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .ctg-event-meta {
-    font-size: 10px;
+    font-size: 9px;
     color: #888;
     margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .ctg-event-time {
-    font-size: 10px;
+    font-size: 9px;
     color: #666;
     flex-shrink: 0;
-  }
-
-  .ctg-expand-hint {
-    font-size: 10px;
-    color: #555;
-    flex-shrink: 0;
-    margin-left: 2px;
-    transition: transform 0.2s ease;
-  }
-
-  .ctg-expand-hint.open {
-    transform: rotate(90deg);
-  }
-
-  .ctg-details {
-    margin-top: 6px;
-    padding: 6px 8px;
-    background: rgba(0,0,0,0.25);
-    border-radius: 4px;
-    font-size: 10px;
-    color: #999;
-    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-    line-height: 1.5;
-    word-break: break-all;
-    display: none;
-  }
-
-  .ctg-details.open {
-    display: block;
-  }
-
-  .ctg-detail-row {
-    display: flex;
-    gap: 4px;
-  }
-
-  .ctg-detail-label {
-    color: #6b7280;
-    flex-shrink: 0;
-  }
-
-  .ctg-detail-value {
-    color: #a5b4c4;
+    white-space: nowrap;
   }
 `;
 
 function getRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return "now";
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function buildHeadline(event: ChessEvent): string {
-  const resultLabel =
-    event.result.charAt(0).toUpperCase() + event.result.slice(1);
-  const typeLabel = event.type === "game" ? "Game" : "Puzzle";
-
-  if (event.type === "game" && event.details.playerColor) {
-    const color =
-      event.details.playerColor.charAt(0).toUpperCase() +
-      event.details.playerColor.slice(1);
-    const reason = event.details.endReason
-      ? ` - ${event.details.endReason}`
-      : "";
-    return `${resultLabel} as ${color}${reason}`;
-  }
-
-  if (event.type === "puzzle") {
-    return `${typeLabel} ${event.result === "win" ? "Solved" : "Failed"}`;
-  }
-
-  return `${resultLabel} - ${typeLabel}`;
-}
-
-function buildMetaLine(event: ChessEvent): string {
-  return `${event.platform} · ${event.type}`;
-}
-
-function renderDetailRows(event: ChessEvent): string {
-  const d = event.details;
-  const rows: Array<[string, string]> = [];
-
-  rows.push(["method", d.detectionMethod]);
-  if (d.matchedSelector) rows.push(["selector", d.matchedSelector]);
-  if (d.rawResult) rows.push(["raw_result", d.rawResult]);
-  if (d.rawPlayingAs !== undefined)
-    rows.push(["playing_as", String(d.rawPlayingAs)]);
-  if (d.playerColor) rows.push(["color", d.playerColor]);
-  if (d.endReason) rows.push(["end_reason", d.endReason]);
-  if (d.puzzleId) rows.push(["puzzle_id", d.puzzleId]);
-  rows.push(["url", event.url]);
-  rows.push(["event_id", event.id]);
-
-  if (d.extra) {
-    for (const [k, v] of Object.entries(d.extra)) {
-      rows.push([k, String(v)]);
-    }
-  }
-
-  return rows
-    .map(
-      ([label, value]) =>
-        `<div class="ctg-detail-row">
-          <span class="ctg-detail-label">${label}:</span>
-          <span class="ctg-detail-value">${escapeHtml(value)}</span>
-        </div>`
-    )
-    .join("");
+  return `${days}d`;
 }
 
 function escapeHtml(str: string): string {
@@ -291,30 +221,101 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function buildHeadline(event: ChessEvent): string {
+  if (event.type === "puzzle") {
+    return event.result === "win" ? "Puzzle Solved" : "Puzzle Failed";
+  }
+
+  const resultLabel =
+    event.result.charAt(0).toUpperCase() + event.result.slice(1);
+
+  if (event.details.playerColor) {
+    const color =
+      event.details.playerColor.charAt(0).toUpperCase() +
+      event.details.playerColor.slice(1);
+    return `${resultLabel} as ${color}`;
+  }
+
+  return resultLabel;
+}
+
+/**
+ * Format time control from seconds-based string to human-readable.
+ * e.g. "180" → "3+0", "180+2" → "3+2", "86400" → null (daily).
+ */
+function formatTimeControl(timeControl: string): string | null {
+  const parts = timeControl.split("+");
+  const baseSeconds = parseInt(parts[0], 10);
+  if (isNaN(baseSeconds)) return null;
+
+  // Skip daily games (base >= 1 day)
+  if (baseSeconds >= 86400) return null;
+
+  const baseMinutes = Math.floor(baseSeconds / 60);
+  const increment = parts[1] ?? "0";
+  return `${baseMinutes}+${increment}`;
+}
+
+function buildMetaLine(event: ChessEvent): string {
+  const parts: string[] = [];
+
+  const extra = event.details.extra;
+  if (extra) {
+    const timeClass = extra.timeClass as string | undefined;
+    const timeControl = extra.timeControl as string | undefined;
+
+    if (timeClass) {
+      const classLabel = timeClass.charAt(0).toUpperCase() + timeClass.slice(1);
+      if (timeControl) {
+        const formatted = formatTimeControl(timeControl);
+        parts.push(formatted ? `${classLabel} ${formatted}` : classLabel);
+      } else {
+        parts.push(classLabel);
+      }
+    } else if (timeControl) {
+      const formatted = formatTimeControl(timeControl);
+      if (formatted) parts.push(formatted);
+    }
+  }
+
+  if (event.details.endReason) {
+    parts.push(event.details.endReason);
+  }
+
+  if (parts.length === 0) {
+    parts.push(event.platform);
+  }
+
+  return parts.join(" \u00B7 ");
+}
+
 function renderEvent(event: ChessEvent, index: number): string {
+  const colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
+  const logo = getPlatformLogo(event.platform);
+
   return `
-    <div class="ctg-event">
-      <div class="ctg-event-row" data-toggle="${index}">
-        <div class="ctg-dot ${event.result}"></div>
+    <div class="ctg-event" style="border-left-color: ${
+      colors.border
+    }; background: ${colors.bg};">
+      <div class="ctg-event-row">
+        <div class="ctg-event-logo">${logo}</div>
         <div class="ctg-event-summary">
           <div class="ctg-event-headline">${escapeHtml(
             buildHeadline(event)
           )}</div>
           <div class="ctg-event-meta">${escapeHtml(buildMetaLine(event))}</div>
         </div>
-        <div class="ctg-event-time">${getRelativeTime(event.timestamp)}</div>
-        <span class="ctg-expand-hint" data-hint="${index}">&#9656;</span>
-      </div>
-      <div class="ctg-details" data-details="${index}">${renderDetailRows(
-    event
+        <div class="ctg-event-time" data-time-idx="${index}">${getRelativeTime(
+    event.timestamp
   )}</div>
+      </div>
     </div>
   `;
 }
 
 function renderList(events: ChessEvent[]): string {
   if (events.length === 0) {
-    return '<div class="ctg-empty">No events yet. Play a game or solve a puzzle.</div>';
+    return '<div class="ctg-empty">No events yet.<br>Play a game or solve a puzzle.</div>';
   }
   return events.map((e, i) => renderEvent(e, i)).join("");
 }
@@ -329,12 +330,10 @@ export function initOverlay(): void {
 
   const shadow = host.attachShadow({ mode: "closed" });
 
-  // Inject styles
   const styleEl = document.createElement("style");
   styleEl.textContent = STYLES;
   shadow.appendChild(styleEl);
 
-  // Build panel
   const panel = document.createElement("div");
   panel.className = "ctg-panel";
   shadow.appendChild(panel);
@@ -350,6 +349,15 @@ export function initOverlay(): void {
   let collapsed = false;
   let currentEvents: ChessEvent[] = [];
 
+  function setVisible(visible: boolean): void {
+    panel.classList.toggle("hidden", !visible);
+  }
+
+  function hideOverlay(e: Event): void {
+    e.stopPropagation();
+    chrome.storage.local.set({ [OVERLAY_VISIBLE_KEY]: false });
+  }
+
   function renderHeader(): void {
     const count = currentEvents.length;
     header.innerHTML = `
@@ -359,17 +367,19 @@ export function initOverlay(): void {
       </div>
       <div class="ctg-controls">
         <button class="ctg-btn ctg-clear-btn">Clear</button>
-        <span class="ctg-chevron">${collapsed ? "▲" : "▼"}</span>
+        <span class="ctg-chevron">${collapsed ? "\u25B2" : "\u25BC"}</span>
+        <button class="ctg-close-btn" title="Hide overlay">&times;</button>
       </div>
     `;
 
-    const clearBtn = header.querySelector(
-      ".ctg-clear-btn"
-    ) as HTMLButtonElement;
-    clearBtn.addEventListener("click", (e) => {
+    header.querySelector(".ctg-clear-btn")!.addEventListener("click", (e) => {
       e.stopPropagation();
       chrome.storage.local.remove(STORAGE_KEY);
     });
+
+    header
+      .querySelector(".ctg-close-btn")!
+      .addEventListener("click", hideOverlay);
   }
 
   function render(events: ChessEvent[]): void {
@@ -385,26 +395,29 @@ export function initOverlay(): void {
     renderHeader();
   });
 
-  // Toggle individual event details (delegated)
-  list.addEventListener("click", (e) => {
-    const row = (e.target as HTMLElement).closest<HTMLElement>("[data-toggle]");
-    if (!row) return;
-    const idx = row.dataset.toggle!;
-    const details = list.querySelector<HTMLElement>(`[data-details="${idx}"]`);
-    const hint = list.querySelector<HTMLElement>(`[data-hint="${idx}"]`);
-    if (details) details.classList.toggle("open");
-    if (hint) hint.classList.toggle("open");
-  });
-
-  // Initial load
-  chrome.storage.local.get(STORAGE_KEY, (data) => {
+  // Load initial state (events + visibility)
+  chrome.storage.local.get([STORAGE_KEY, OVERLAY_VISIBLE_KEY], (data) => {
+    // Default to visible if key doesn't exist
+    const visible = data[OVERLAY_VISIBLE_KEY] !== false;
+    setVisible(visible);
     render(data[STORAGE_KEY] ?? []);
   });
 
   // Live updates
   chrome.storage.onChanged.addListener((changes) => {
     if (changes[STORAGE_KEY]) {
-      render(changes[STORAGE_KEY].newValue ?? []);
+      const newEvents: ChessEvent[] = changes[STORAGE_KEY].newValue ?? [];
+      const oldEvents: ChessEvent[] = changes[STORAGE_KEY].oldValue ?? [];
+
+      render(newEvents);
+
+      // Auto-reshow overlay when a new event arrives (dismiss = "until next event")
+      if (newEvents.length > oldEvents.length) {
+        setVisible(true);
+      }
+    }
+    if (changes[OVERLAY_VISIBLE_KEY]) {
+      setVisible(changes[OVERLAY_VISIBLE_KEY].newValue !== false);
     }
   });
 

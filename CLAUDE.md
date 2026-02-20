@@ -49,7 +49,6 @@ Content script detectors → chrome.runtime.sendMessage → Background service w
 ```
 
 ### Key Shared Modules
-
 - `src/types.ts` — All shared interfaces (`ChessEvent`, `EventDetails`, API types, message types)
 - `src/constants.ts` — Storage keys, limits (max 200 events, 7-day pending game TTL)
 - `src/storage.ts` — Chrome storage abstraction with dedup-by-ID and queue capping

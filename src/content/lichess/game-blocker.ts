@@ -1,3 +1,8 @@
+import { ChessEvent } from "../../types";
+import { STORAGE_KEY } from "../../constants";
+import { BlockingState, computeBlockingState } from "../shared/blocking-logic";
+import { showBlockingModal } from "../shared/blocking-modal";
+
 const LOG = "[CTG GameBlocker]";
 
 /** CSS selectors for lichess play/seek buttons. */
@@ -38,11 +43,9 @@ function getDirectText(el: Element): string {
 function isPlayElement(target: EventTarget | null): boolean {
   let el = target as Element | null;
   while (el && el !== document.documentElement) {
-    // Selector match
     for (const sel of PLAY_SELECTORS) {
       if (el.matches(sel)) return true;
     }
-    // Text match (only on button/link elements)
     if (TEXT_MATCH_TAGS.includes(el.tagName)) {
       if (PLAY_TEXT_PATTERNS.test(getDirectText(el))) return true;
     }
@@ -51,51 +54,53 @@ function isPlayElement(target: EventTarget | null): boolean {
   return false;
 }
 
-/**
- * Apply a visual "blocked" style to play buttons currently in the DOM.
- */
-function markBlockedButtons(): void {
-  for (const sel of PLAY_SELECTORS) {
-    document.querySelectorAll(sel).forEach((el) => {
-      const htmlEl = el as HTMLElement;
-      htmlEl.style.opacity = "0.5";
-      htmlEl.style.cursor = "not-allowed";
-    });
-  }
-}
-
 // ── State ──────────────────────────────────────────────────────────────
 
 let initialized = false;
 let clickHandler: ((e: MouseEvent) => void) | null = null;
-let observer: MutationObserver | null = null;
+let cachedState: BlockingState = {
+  blocked: false,
+  consecutiveLosses: 0,
+  puzzleWinsAfterStreak: 0,
+  puzzleWinsNeeded: 0,
+};
+
+function updateBlockingState(events: ChessEvent[]): void {
+  cachedState = computeBlockingState(events);
+  console.log(LOG, "Blocking state updated:", cachedState);
+}
 
 // ── Public API ─────────────────────────────────────────────────────────
 
 export function initLichessGameBlocker(): void {
-  // Guard against double-init: tear down previous listener/observer first
   if (initialized) {
     teardown();
   }
 
+  // Load initial state
+  chrome.storage.local.get(STORAGE_KEY, (data) => {
+    updateBlockingState(data[STORAGE_KEY] ?? []);
+  });
+
+  // Listen for storage changes to keep state fresh
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes[STORAGE_KEY]) {
+      updateBlockingState(changes[STORAGE_KEY].newValue ?? []);
+    }
+  });
+
   clickHandler = (e: MouseEvent) => {
     if (isPlayElement(e.target)) {
+      if (!cachedState.blocked) return; // allow click
+
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      console.log(LOG, "Blocked game-seeking click", e.target);
-      alert("You shall not pass!");
+      showBlockingModal(cachedState, "lichess");
     }
   };
 
   document.addEventListener("click", clickHandler, { capture: true });
-
-  // Observe DOM for newly-inserted play buttons and dim them
-  observer = new MutationObserver(() => markBlockedButtons());
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  // Mark any buttons already present
-  markBlockedButtons();
 
   initialized = true;
   console.log(LOG, "Lichess game blocker initialized");
@@ -105,10 +110,6 @@ function teardown(): void {
   if (clickHandler) {
     document.removeEventListener("click", clickHandler, { capture: true });
     clickHandler = null;
-  }
-  if (observer) {
-    observer.disconnect();
-    observer = null;
   }
   initialized = false;
 }

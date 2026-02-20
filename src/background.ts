@@ -9,6 +9,7 @@ import {
 import { addEvent } from "./storage";
 import { PENDING_GAMES_KEY, STORAGE_KEY } from "./constants";
 import type { PendingGame } from "./types";
+import { computeStreakInfo } from "./content/shared/blocking-logic";
 
 const LOG = "[CTG Background]";
 
@@ -263,5 +264,40 @@ chrome.runtime.onMessage.addListener(
     }
   }
 );
+
+// ── Badge updates ────────────────────────────────────────────────────
+
+function updateBadge(events: ChessEvent[]): void {
+  const { consecutiveLosses, consecutiveWins } = computeStreakInfo(events);
+
+  if (consecutiveLosses >= 2) {
+    // Tilted — red badge with loss count
+    chrome.action.setBadgeText({ text: String(consecutiveLosses) });
+    chrome.action.setBadgeBackgroundColor({ color: "#F44336" });
+  } else if (consecutiveLosses === 1) {
+    // One loss — orange warning
+    chrome.action.setBadgeText({ text: "1" });
+    chrome.action.setBadgeBackgroundColor({ color: "#FF9800" });
+  } else if (consecutiveWins >= 2) {
+    // Win streak — green badge
+    chrome.action.setBadgeText({ text: `W${consecutiveWins}` });
+    chrome.action.setBadgeBackgroundColor({ color: "#4CAF50" });
+  } else {
+    // Neutral — clear badge
+    chrome.action.setBadgeText({ text: "" });
+  }
+}
+
+// Update badge on startup
+chrome.storage.local.get(STORAGE_KEY, (data) => {
+  updateBadge(data[STORAGE_KEY] ?? []);
+});
+
+// Update badge whenever events change
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes[STORAGE_KEY]) {
+    updateBadge(changes[STORAGE_KEY].newValue ?? []);
+  }
+});
 
 console.log(LOG, "Service worker loaded");
