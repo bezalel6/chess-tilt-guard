@@ -1,6 +1,7 @@
 import { ChessEvent } from "../../types";
-import { STORAGE_KEY, OVERLAY_VISIBLE_KEY } from "../../constants";
+import { STORAGE_KEY } from "../../constants";
 import { getPlatformLogo } from "./logos";
+import { renderMiniboard } from "./miniboard";
 
 const HOST_ID = "chess-tilt-guard-overlay";
 
@@ -37,10 +38,6 @@ const STYLES = `
 
   .ctg-panel.collapsed {
     max-height: 32px;
-  }
-
-  .ctg-panel.hidden {
-    display: none;
   }
 
   .ctg-header {
@@ -97,24 +94,6 @@ const STYLES = `
     border-color: rgba(255,255,255,0.4);
   }
 
-  .ctg-close-btn {
-    background: none;
-    border: 1px solid rgba(255,255,255,0.15);
-    color: #999;
-    font-size: 14px;
-    cursor: pointer;
-    padding: 1px 4px;
-    line-height: 1;
-    border-radius: 3px;
-    transition: color 0.15s, background 0.15s, border-color 0.15s;
-  }
-
-  .ctg-close-btn:hover {
-    color: #f44336;
-    background: rgba(244, 67, 54, 0.15);
-    border-color: rgba(244, 67, 54, 0.3);
-  }
-
   .ctg-chevron {
     font-size: 12px;
     color: #aaa;
@@ -153,6 +132,12 @@ const STYLES = `
     padding: 5px 8px;
     border-bottom: 1px solid #2d2d44;
     border-left: 3px solid transparent;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+
+  .ctg-event:hover {
+    filter: brightness(1.25);
   }
 
   .ctg-event-row {
@@ -199,6 +184,36 @@ const STYLES = `
     color: #666;
     flex-shrink: 0;
     white-space: nowrap;
+  }
+
+  .ctg-tooltip {
+    position: fixed;
+    display: none;
+    background: #1e1e36;
+    border: 1px solid #3d3d5c;
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+    padding: 8px;
+    z-index: 2147483647;
+    pointer-events: none;
+    max-width: 200px;
+  }
+
+  .ctg-tooltip.visible {
+    display: block;
+  }
+
+  .ctg-tooltip-meta {
+    font-size: 10px;
+    color: #bbb;
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  .ctg-tooltip-meta div {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 `;
 
@@ -294,9 +309,11 @@ function renderEvent(event: ChessEvent, index: number): string {
   const logo = getPlatformLogo(event.platform);
 
   return `
-    <div class="ctg-event" style="border-left-color: ${
-      colors.border
-    }; background: ${colors.bg};">
+    <div class="ctg-event" data-url="${escapeHtml(
+      event.url
+    )}" data-event-idx="${index}" style="border-left-color: ${
+    colors.border
+  }; background: ${colors.bg};">
       <div class="ctg-event-row">
         <div class="ctg-event-logo">${logo}</div>
         <div class="ctg-event-summary">
@@ -346,17 +363,141 @@ export function initOverlay(): void {
   list.className = "ctg-list";
   panel.appendChild(list);
 
+  // Open event URLs in new tab on click
+  list.addEventListener("click", (e) => {
+    const eventEl = (e.target as HTMLElement).closest(".ctg-event");
+    const url = eventEl?.getAttribute("data-url");
+    if (url) window.open(url, "_blank");
+  });
+
+  // Tooltip element for hover previews
+  const tooltip = document.createElement("div");
+  tooltip.className = "ctg-tooltip";
+  shadow.appendChild(tooltip);
+
+  function buildTooltipContent(event: ChessEvent): string {
+    const parts: string[] = [];
+    const extra = event.details.extra;
+
+    // Miniboard if FEN available
+    if (event.details.fen) {
+      parts.push(renderMiniboard(event.details.fen));
+    }
+
+    // Metadata
+    const metaLines: string[] = [];
+
+    if (event.type === "game") {
+      if (extra?.opponentUsername) {
+        const oppRating = extra.opponentRating
+          ? ` (${extra.opponentRating})`
+          : "";
+        metaLines.push(
+          `vs ${escapeHtml(String(extra.opponentUsername))}${oppRating}`
+        );
+      }
+      if (extra?.playerRating) {
+        metaLines.push(`Rating: ${extra.playerRating}`);
+      }
+      if (extra?.timeClass) {
+        const tc = extra.timeControl
+          ? formatTimeControl(String(extra.timeControl))
+          : null;
+        const label =
+          String(extra.timeClass).charAt(0).toUpperCase() +
+          String(extra.timeClass).slice(1);
+        metaLines.push(tc ? `${label} ${tc}` : label);
+      }
+      if (event.details.endReason) {
+        metaLines.push(event.details.endReason);
+      }
+    } else {
+      // Puzzle
+      if (event.details.puzzleId) {
+        metaLines.push(`Puzzle #${event.details.puzzleId}`);
+      }
+      metaLines.push(event.platform);
+    }
+
+    if (metaLines.length > 0) {
+      parts.push(
+        `<div class="ctg-tooltip-meta">${metaLines
+          .map((l) => `<div>${escapeHtml(l)}</div>`)
+          .join("")}</div>`
+      );
+    }
+
+    return parts.join("");
+  }
+
+  list.addEventListener(
+    "mouseenter",
+    (e) => {
+      const target = e.target as HTMLElement;
+      const eventEl = target.closest?.(".ctg-event") as HTMLElement | null;
+      if (!eventEl) return;
+
+      const idx = parseInt(eventEl.getAttribute("data-event-idx") ?? "", 10);
+      if (isNaN(idx) || !currentEvents[idx]) return;
+
+      const content = buildTooltipContent(currentEvents[idx]);
+      if (!content) return;
+
+      tooltip.innerHTML = content;
+      tooltip.classList.add("visible");
+
+      // Position to the left of the panel
+      const panelRect = panel.getBoundingClientRect();
+      const eventRect = eventEl.getBoundingClientRect();
+      tooltip.style.right = `${window.innerWidth - panelRect.left + 8}px`;
+      tooltip.style.top = `${eventRect.top}px`;
+    },
+    true
+  );
+
+  list.addEventListener(
+    "mouseleave",
+    (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest?.(".ctg-event")) {
+        tooltip.classList.remove("visible");
+      }
+    },
+    true
+  );
+
+  // Also hide on mouseover between items
+  list.addEventListener("mouseover", (e) => {
+    const target = e.target as HTMLElement;
+    const eventEl = target.closest?.(".ctg-event") as HTMLElement | null;
+    if (!eventEl) {
+      tooltip.classList.remove("visible");
+      return;
+    }
+
+    const idx = parseInt(eventEl.getAttribute("data-event-idx") ?? "", 10);
+    if (isNaN(idx) || !currentEvents[idx]) {
+      tooltip.classList.remove("visible");
+      return;
+    }
+
+    const content = buildTooltipContent(currentEvents[idx]);
+    if (!content) {
+      tooltip.classList.remove("visible");
+      return;
+    }
+
+    tooltip.innerHTML = content;
+    tooltip.classList.add("visible");
+
+    const panelRect = panel.getBoundingClientRect();
+    const eventRect = eventEl.getBoundingClientRect();
+    tooltip.style.right = `${window.innerWidth - panelRect.left + 8}px`;
+    tooltip.style.top = `${eventRect.top}px`;
+  });
+
   let collapsed = false;
   let currentEvents: ChessEvent[] = [];
-
-  function setVisible(visible: boolean): void {
-    panel.classList.toggle("hidden", !visible);
-  }
-
-  function hideOverlay(e: Event): void {
-    e.stopPropagation();
-    chrome.storage.local.set({ [OVERLAY_VISIBLE_KEY]: false });
-  }
 
   function renderHeader(): void {
     const count = currentEvents.length;
@@ -368,7 +509,6 @@ export function initOverlay(): void {
       <div class="ctg-controls">
         <button class="ctg-btn ctg-clear-btn">Clear</button>
         <span class="ctg-chevron">${collapsed ? "\u25B2" : "\u25BC"}</span>
-        <button class="ctg-close-btn" title="Hide overlay">&times;</button>
       </div>
     `;
 
@@ -376,10 +516,6 @@ export function initOverlay(): void {
       e.stopPropagation();
       chrome.storage.local.remove(STORAGE_KEY);
     });
-
-    header
-      .querySelector(".ctg-close-btn")!
-      .addEventListener("click", hideOverlay);
   }
 
   function render(events: ChessEvent[]): void {
@@ -395,29 +531,16 @@ export function initOverlay(): void {
     renderHeader();
   });
 
-  // Load initial state (events + visibility)
-  chrome.storage.local.get([STORAGE_KEY, OVERLAY_VISIBLE_KEY], (data) => {
-    // Default to visible if key doesn't exist
-    const visible = data[OVERLAY_VISIBLE_KEY] !== false;
-    setVisible(visible);
+  // Load initial events
+  chrome.storage.local.get(STORAGE_KEY, (data) => {
     render(data[STORAGE_KEY] ?? []);
   });
 
-  // Live updates
+  // Live updates for events
   chrome.storage.onChanged.addListener((changes) => {
     if (changes[STORAGE_KEY]) {
       const newEvents: ChessEvent[] = changes[STORAGE_KEY].newValue ?? [];
-      const oldEvents: ChessEvent[] = changes[STORAGE_KEY].oldValue ?? [];
-
       render(newEvents);
-
-      // Auto-reshow overlay when a new event arrives (dismiss = "until next event")
-      if (newEvents.length > oldEvents.length) {
-        setVisible(true);
-      }
-    }
-    if (changes[OVERLAY_VISIBLE_KEY]) {
-      setVisible(changes[OVERLAY_VISIBLE_KEY].newValue !== false);
     }
   });
 

@@ -6,13 +6,21 @@ import { initOverlay } from "../shared/overlay";
 import { resolveLichessUsername } from "./username-detector";
 import { requestSync } from "../shared/sync-trigger";
 
+import { OVERLAY_VISIBLE_KEY } from "../../constants";
+
 function init(): void {
   console.log("[Chess Tilt Guard] Lichess content script loaded");
   initLichessGameDetector();
   initLichessPuzzleDetector();
   initLichessGameBlocker();
-  initOverlay();
   triggerSync();
+
+  // Only initialize overlay if not disabled — takes effect on page load
+  chrome.storage.local.get(OVERLAY_VISIBLE_KEY, (data) => {
+    if (data[OVERLAY_VISIBLE_KEY] !== false) {
+      initOverlay();
+    }
+  });
 }
 
 /** Detect username and request a background API sync for Lichess. */
