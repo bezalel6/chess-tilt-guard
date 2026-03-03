@@ -11,6 +11,7 @@ const PLAY_SELECTORS = [
   '[data-cy^="time-selector-category-"]',
   '[data-cy="sidebar-game-over-new-game-button"]',
   '[data-cy="sidebar-game-over-rematch-button"]',
+  '[data-cy*="new-game"]',
   ".play-quick-links-link",
   ".new-game-buttons-component button",
   ".game-over-buttons-component button",
@@ -18,24 +19,14 @@ const PLAY_SELECTORS = [
   ".board-modal-container button",
 ];
 
-/** Text patterns matched against a button's own (direct) text content. */
-const PLAY_TEXT_PATTERNS = /\b(play|new\s+game|rematch)\b/i;
+/**
+ * Text patterns matched against a button/link's full text content.
+ * Matches: "Play", "New Game", "Rematch", "New 3 min", "New 10 min", etc.
+ */
+const PLAY_TEXT_PATTERNS = /\b(play|new\s+game|new\s+\d+\s*min|rematch)\b/i;
 
 /** Elements eligible for text-based matching. */
 const TEXT_MATCH_TAGS = ["BUTTON", "A"];
-
-/**
- * Returns the element's own direct text (ignoring child element text).
- */
-function getDirectText(el: Element): string {
-  let text = "";
-  for (const node of el.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      text += node.textContent;
-    }
-  }
-  return text.trim();
-}
 
 /**
  * Walk from `target` up through ancestors, checking if any element
@@ -48,7 +39,8 @@ function isPlayElement(target: EventTarget | null): boolean {
       if (el.matches(sel)) return true;
     }
     if (TEXT_MATCH_TAGS.includes(el.tagName)) {
-      if (PLAY_TEXT_PATTERNS.test(getDirectText(el))) return true;
+      const text = (el.textContent ?? "").trim();
+      if (PLAY_TEXT_PATTERNS.test(text)) return true;
     }
     el = el.parentElement;
   }
@@ -91,6 +83,9 @@ export function initChessComGameBlocker(): void {
   });
 
   clickHandler = (e: MouseEvent) => {
+    // Never block on puzzle pages — blocking is supposed to redirect users TO puzzles
+    if (location.pathname.startsWith("/puzzles")) return;
+
     if (isPlayElement(e.target)) {
       if (!cachedState.blocked) return; // allow click
 

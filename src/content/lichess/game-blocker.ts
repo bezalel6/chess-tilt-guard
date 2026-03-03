@@ -17,24 +17,11 @@ const PLAY_SELECTORS = [
   ".rcontrols button",
 ];
 
-/** Text patterns matched against a button's own (direct) text content. */
+/** Text patterns matched against a button/link's full text content. */
 const PLAY_TEXT_PATTERNS = /\b(new\s+opponent|rematch)\b/i;
 
 /** Elements eligible for text-based matching. */
 const TEXT_MATCH_TAGS = ["BUTTON", "A"];
-
-/**
- * Returns the element's own direct text (ignoring child element text).
- */
-function getDirectText(el: Element): string {
-  let text = "";
-  for (const node of el.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      text += node.textContent;
-    }
-  }
-  return text.trim();
-}
 
 /**
  * Walk from `target` up through ancestors, checking if any element
@@ -47,7 +34,8 @@ function isPlayElement(target: EventTarget | null): boolean {
       if (el.matches(sel)) return true;
     }
     if (TEXT_MATCH_TAGS.includes(el.tagName)) {
-      if (PLAY_TEXT_PATTERNS.test(getDirectText(el))) return true;
+      const text = (el.textContent ?? "").trim();
+      if (PLAY_TEXT_PATTERNS.test(text)) return true;
     }
     el = el.parentElement;
   }
@@ -90,6 +78,10 @@ export function initLichessGameBlocker(): void {
   });
 
   clickHandler = (e: MouseEvent) => {
+    // Never block on puzzle pages — blocking is supposed to redirect users TO puzzles
+    const path = location.pathname;
+    if (path.startsWith("/training") || path.startsWith("/streak") || path.startsWith("/storm")) return;
+
     if (isPlayElement(e.target)) {
       if (!cachedState.blocked) return; // allow click
 
