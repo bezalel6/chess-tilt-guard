@@ -1,10 +1,16 @@
 import { ChessEvent } from "../../types";
+import {
+  DEFAULT_LOSS_STREAK_THRESHOLD,
+  DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+} from "../../constants";
 
 export interface BlockingState {
   blocked: boolean;
   consecutiveLosses: number;
   puzzleWinsAfterStreak: number;
   puzzleWinsNeeded: number;
+  /** Total puzzle wins required to unblock (for display). */
+  puzzleWinsRequired: number;
 }
 
 /** Badge-friendly streak summary for the extension icon. */
@@ -52,19 +58,24 @@ export function computeStreakInfo(events: ChessEvent[]): StreakInfo {
  * Algorithm (events are sorted newest-first):
  * 1. Filter to games only, count consecutive losses from the top
  *    (a win or draw breaks the streak).
- * 2. If < 2 consecutive losses → not blocked.
- * 3. If >= 2 → check for puzzle events NEWER than the most recent game.
+ * 2. If < lossStreakThreshold consecutive losses → not blocked.
+ * 3. If >= threshold → check for puzzle events NEWER than the most recent game.
  * 4. Walk those puzzles newest-first; count consecutive wins
  *    (a failed puzzle resets the count to 0).
- * 5. If >= 2 consecutive puzzle wins → not blocked (cooldown complete).
- * 6. Otherwise → blocked, with puzzleWinsNeeded = 2 - count.
+ * 5. If >= puzzleWinsToUnblock consecutive puzzle wins → not blocked.
+ * 6. Otherwise → blocked, with puzzleWinsNeeded = puzzleWinsToUnblock - count.
  */
-export function computeBlockingState(events: ChessEvent[]): BlockingState {
+export function computeBlockingState(
+  events: ChessEvent[],
+  lossStreakThreshold = DEFAULT_LOSS_STREAK_THRESHOLD,
+  puzzleWinsToUnblock = DEFAULT_PUZZLE_WINS_TO_UNBLOCK
+): BlockingState {
   const NOT_BLOCKED: BlockingState = {
     blocked: false,
     consecutiveLosses: 0,
     puzzleWinsAfterStreak: 0,
     puzzleWinsNeeded: 0,
+    puzzleWinsRequired: puzzleWinsToUnblock,
   };
 
   if (events.length === 0) return NOT_BLOCKED;
@@ -81,7 +92,7 @@ export function computeBlockingState(events: ChessEvent[]): BlockingState {
   }
 
   // Step 2: Not enough losses to trigger blocking
-  if (consecutiveLosses < 2) {
+  if (consecutiveLosses < lossStreakThreshold) {
     return { ...NOT_BLOCKED, consecutiveLosses };
   }
 
@@ -103,12 +114,13 @@ export function computeBlockingState(events: ChessEvent[]): BlockingState {
   }
 
   // Step 5: Enough puzzle wins to unblock
-  if (puzzleWinsAfterStreak >= 2) {
+  if (puzzleWinsAfterStreak >= puzzleWinsToUnblock) {
     return {
       blocked: false,
       consecutiveLosses,
       puzzleWinsAfterStreak,
       puzzleWinsNeeded: 0,
+      puzzleWinsRequired: puzzleWinsToUnblock,
     };
   }
 
@@ -117,6 +129,7 @@ export function computeBlockingState(events: ChessEvent[]): BlockingState {
     blocked: true,
     consecutiveLosses,
     puzzleWinsAfterStreak,
-    puzzleWinsNeeded: 2 - puzzleWinsAfterStreak,
+    puzzleWinsNeeded: puzzleWinsToUnblock - puzzleWinsAfterStreak,
+    puzzleWinsRequired: puzzleWinsToUnblock,
   };
 }

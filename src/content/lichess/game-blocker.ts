@@ -1,5 +1,10 @@
-import { ChessEvent } from "../../types";
-import { STORAGE_KEY } from "../../constants";
+import { ChessEvent, UserSettings } from "../../types";
+import {
+  STORAGE_KEY,
+  SETTINGS_KEY,
+  DEFAULT_LOSS_STREAK_THRESHOLD,
+  DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+} from "../../constants";
 import { BlockingState, computeBlockingState } from "../shared/blocking-logic";
 import { showBlockingModal } from "../shared/blocking-modal";
 
@@ -51,10 +56,13 @@ let cachedState: BlockingState = {
   consecutiveLosses: 0,
   puzzleWinsAfterStreak: 0,
   puzzleWinsNeeded: 0,
+  puzzleWinsRequired: DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
 };
+let cachedLossThreshold = DEFAULT_LOSS_STREAK_THRESHOLD;
+let cachedPuzzleWins = DEFAULT_PUZZLE_WINS_TO_UNBLOCK;
 
-function updateBlockingState(events: ChessEvent[]): void {
-  cachedState = computeBlockingState(events);
+function recompute(events: ChessEvent[]): void {
+  cachedState = computeBlockingState(events, cachedLossThreshold, cachedPuzzleWins);
   console.log(LOG, "Blocking state updated:", cachedState);
 }
 
@@ -65,16 +73,37 @@ export function initLichessGameBlocker(): void {
     teardown();
   }
 
-  // Load initial state
-  chrome.storage.local.get(STORAGE_KEY, (data) => {
-    updateBlockingState(data[STORAGE_KEY] ?? []);
+  // Load initial state (events + settings)
+  chrome.storage.local.get([STORAGE_KEY, SETTINGS_KEY], (data) => {
+    const settings: UserSettings | undefined = data[SETTINGS_KEY];
+    if (settings) {
+      cachedLossThreshold = settings.lossStreakThreshold;
+      cachedPuzzleWins = settings.puzzleWinsToUnblock;
+    }
+    recompute(data[STORAGE_KEY] ?? []);
   });
+
+  // Keep a reference to the latest events for recomputation on settings change
+  let latestEvents: ChessEvent[] = [];
 
   // Listen for storage changes to keep state fresh
   chrome.storage.onChanged.addListener((changes) => {
+    let needsRecompute = false;
+
     if (changes[STORAGE_KEY]) {
-      updateBlockingState(changes[STORAGE_KEY].newValue ?? []);
+      latestEvents = changes[STORAGE_KEY].newValue ?? [];
+      needsRecompute = true;
     }
+    if (changes[SETTINGS_KEY]) {
+      const settings: UserSettings | undefined = changes[SETTINGS_KEY].newValue;
+      if (settings) {
+        cachedLossThreshold = settings.lossStreakThreshold;
+        cachedPuzzleWins = settings.puzzleWinsToUnblock;
+      }
+      needsRecompute = true;
+    }
+
+    if (needsRecompute) recompute(latestEvents);
   });
 
   clickHandler = (e: MouseEvent) => {

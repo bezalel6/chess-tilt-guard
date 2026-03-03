@@ -7,10 +7,19 @@ import {
   PlayerColor,
 } from "./types";
 import { addEvent } from "./storage";
-import { PENDING_GAMES_KEY, STORAGE_KEY } from "./constants";
-import type { PendingGame } from "./types";
+import {
+  PENDING_GAMES_KEY,
+  STORAGE_KEY,
+  USERNAMES_KEY,
+  CACHED_USERNAME_KEY,
+  CACHED_LICHESS_USERNAME_KEY,
+  SETTINGS_KEY,
+  DEFAULT_LOSS_STREAK_THRESHOLD,
+} from "./constants";
+import type { PendingGame, StoredUsernames } from "./types";
 import { computeStreakInfo } from "./content/shared/blocking-logic";
 import { syncPlatform } from "./background/api-sync";
+import { extractFenFromPgn } from "./background/fen-utils";
 
 const LOG = "[CTG Background]";
 
@@ -26,6 +35,9 @@ const DRAW_RESULTS = new Set([
   "50move",
   "timevsinsufficient",
 ]);
+
+/** Chess.com API result strings for games that should be skipped entirely. */
+const ABORT_RESULTS = new Set(["abandoned", "aborted"]);
 
 /** Map chess.com API result strings to human-readable end reasons. */
 const END_REASON_MAP: Record<string, string> = {
@@ -65,9 +77,20 @@ function gameToEvent(
   if (!isWhite && !isBlack) return null; // spectator or wrong user
 
   const player: ChessComApiPlayer = isWhite ? game.white : game.black;
+
+  // Skip aborted/abandoned games entirely
+  if (
+    ABORT_RESULTS.has(game.white.result) ||
+    ABORT_RESULTS.has(game.black.result)
+  ) {
+    return null;
+  }
+
   const playerColor: PlayerColor = isWhite ? "white" : "black";
   const result = classifyResult(player.result);
   const endReason = toEndReason(game.white.result, game.black.result);
+
+  const fen = game.pgn ? extractFenFromPgn(game.pgn) : null;
 
   return {
     id: `chesscom-game-${game.url}`,
@@ -81,6 +104,7 @@ function gameToEvent(
       playerColor,
       endReason,
       rawResult: player.result,
+      fen: fen ?? undefined,
       extra: {
         timeClass: game.time_class,
         timeControl: game.time_control,
@@ -240,6 +264,57 @@ async function checkPendingGames(username: string): Promise<void> {
   );
 }
 
+// ── Username migration ────────────────────────────────────────────────
+
+/**
+ * Migrate old per-platform cached username keys into the unified USERNAMES_KEY.
+ * Idempotent — safe to run on every startup.
+ */
+async function migrateUsernames(): Promise<void> {
+  const data = await chrome.storage.local.get([
+    USERNAMES_KEY,
+    CACHED_USERNAME_KEY,
+    CACHED_LICHESS_USERNAME_KEY,
+  ]);
+
+  const existing: StoredUsernames = data[USERNAMES_KEY] ?? {};
+  let changed = false;
+
+  const oldChessCom: string | undefined = data[CACHED_USERNAME_KEY];
+  if (oldChessCom && !existing["chess.com"]) {
+    existing["chess.com"] = { username: oldChessCom, source: "auto" };
+    changed = true;
+  }
+
+  const oldLichess: string | undefined = data[CACHED_LICHESS_USERNAME_KEY];
+  if (oldLichess && !existing.lichess) {
+    existing.lichess = { username: oldLichess, source: "auto" };
+    changed = true;
+  }
+
+  // Handle legacy flat-string format: { "chess.com": "user" } → { "chess.com": { username: "user", source: "auto" } }
+  for (const key of ["chess.com", "lichess"] as const) {
+    const val = existing[key];
+    if (val && typeof val === "string") {
+      (existing as Record<string, unknown>)[key] = { username: val, source: "auto" };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await chrome.storage.local.set({ [USERNAMES_KEY]: existing });
+    console.log(LOG, "Migrated usernames:", existing);
+  }
+
+  // Remove old keys regardless (cleanup)
+  await chrome.storage.local.remove([
+    CACHED_USERNAME_KEY,
+    CACHED_LICHESS_USERNAME_KEY,
+  ]);
+}
+
+migrateUsernames();
+
 // ── Message listener ──────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener(
@@ -278,16 +353,18 @@ chrome.runtime.onMessage.addListener(
 
 // ── Badge updates ────────────────────────────────────────────────────
 
+let cachedLossThreshold = DEFAULT_LOSS_STREAK_THRESHOLD;
+
 function updateBadge(events: ChessEvent[]): void {
   const { consecutiveLosses, consecutiveWins } = computeStreakInfo(events);
 
-  if (consecutiveLosses >= 2) {
+  if (consecutiveLosses >= cachedLossThreshold) {
     // Tilted — red badge with loss count
     chrome.action.setBadgeText({ text: String(consecutiveLosses) });
     chrome.action.setBadgeBackgroundColor({ color: "#F44336" });
-  } else if (consecutiveLosses === 1) {
-    // One loss — orange warning
-    chrome.action.setBadgeText({ text: "1" });
+  } else if (consecutiveLosses >= 1) {
+    // Approaching threshold — orange warning
+    chrome.action.setBadgeText({ text: String(consecutiveLosses) });
     chrome.action.setBadgeBackgroundColor({ color: "#FF9800" });
   } else if (consecutiveWins >= 2) {
     // Win streak — green badge
@@ -299,15 +376,32 @@ function updateBadge(events: ChessEvent[]): void {
   }
 }
 
-// Update badge on startup
-chrome.storage.local.get(STORAGE_KEY, (data) => {
+// Load initial state (events + settings)
+chrome.storage.local.get([STORAGE_KEY, SETTINGS_KEY], (data) => {
+  const settings = data[SETTINGS_KEY];
+  if (settings?.lossStreakThreshold) {
+    cachedLossThreshold = settings.lossStreakThreshold;
+  }
   updateBadge(data[STORAGE_KEY] ?? []);
 });
 
-// Update badge whenever events change
+// Single storage listener for events + settings changes
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes[STORAGE_KEY]) {
-    updateBadge(changes[STORAGE_KEY].newValue ?? []);
+  if (changes[SETTINGS_KEY]) {
+    const settings = changes[SETTINGS_KEY].newValue;
+    if (settings?.lossStreakThreshold) {
+      cachedLossThreshold = settings.lossStreakThreshold;
+    }
+  }
+  if (changes[STORAGE_KEY] || changes[SETTINGS_KEY]) {
+    // Re-read current events if settings changed but events didn't
+    if (changes[STORAGE_KEY]) {
+      updateBadge(changes[STORAGE_KEY].newValue ?? []);
+    } else {
+      chrome.storage.local.get(STORAGE_KEY, (data) => {
+        updateBadge(data[STORAGE_KEY] ?? []);
+      });
+    }
   }
 });
 

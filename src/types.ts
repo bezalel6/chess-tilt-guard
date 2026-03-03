@@ -19,6 +19,8 @@ export interface EventDetails {
   puzzleId?: string;
   /** Raw numeric color value (1=white, 2=black). */
   rawPlayingAs?: number;
+  /** FEN string of the final position (API-resolved games only). */
+  fen?: string;
   /** Any additional raw data for debugging. */
   extra?: Record<string, unknown>;
 }
@@ -100,10 +102,29 @@ export interface LichessApiGame {
   lastMoveAt: number;
   status: string;
   winner?: "white" | "black";
+  lastFen?: string;
   players: {
     white: LichessApiPlayer;
     black: LichessApiPlayer;
   };
+}
+
+/** A single platform username entry with its origin. */
+export interface UsernameEntry {
+  username: string;
+  source: "auto" | "manual";
+}
+
+/** Usernames stored per platform, managed via popup or auto-detected from DOM. */
+export interface StoredUsernames {
+  "chess.com"?: UsernameEntry;
+  lichess?: UsernameEntry;
+}
+
+/** User-configurable blocking thresholds. */
+export interface UserSettings {
+  lossStreakThreshold: number;
+  puzzleWinsToUnblock: number;
 }
 
 export type BackgroundMessage =
