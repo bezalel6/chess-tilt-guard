@@ -37,6 +37,11 @@ function getRelativeTime(timestamp: number): string {
 }
 
 function buildHeadline(event: ChessEvent): string {
+  if (event.type === "puzzle_rush") {
+    const score = (event.details.extra?.score as number) ?? 0;
+    return `Puzzle Rush: ${score}`;
+  }
+
   if (event.type === "puzzle") {
     return event.result === "win" ? "Puzzle Solved" : "Puzzle Failed";
   }
@@ -160,6 +165,10 @@ function buildTooltipMeta(event: ChessEvent): string[] {
     if (event.details.endReason) {
       lines.push(event.details.endReason);
     }
+  } else if (event.type === "puzzle_rush") {
+    const score = (extra?.score as number) ?? 0;
+    lines.push(`Score: ${score}`);
+    lines.push(event.platform);
   } else {
     if (event.details.puzzleId) {
       lines.push(`Puzzle #${event.details.puzzleId}`);
@@ -253,7 +262,10 @@ const EventCard: React.FC<{
   event: ChessEvent;
   onHover: (event: ChessEvent, rect: DOMRect | null) => void;
 }> = ({ event, onHover }) => {
-  const colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
+  let colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
+  if (event.type === "puzzle_rush") {
+    colors = { border: "#ffa726", bg: "rgba(255, 167, 38, 0.08)" };
+  }
   const cardRef = useRef<HTMLDivElement>(null);
 
   const handleClick = () => {

@@ -237,6 +237,11 @@ function escapeHtml(str: string): string {
 }
 
 function buildHeadline(event: ChessEvent): string {
+  if (event.type === "puzzle_rush") {
+    const score = (event.details.extra?.score as number) ?? 0;
+    return `Puzzle Rush: ${score}`;
+  }
+
   if (event.type === "puzzle") {
     return event.result === "win" ? "Puzzle Solved" : "Puzzle Failed";
   }
@@ -305,7 +310,10 @@ function buildMetaLine(event: ChessEvent): string {
 }
 
 function renderEvent(event: ChessEvent, index: number): string {
-  const colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
+  let colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
+  if (event.type === "puzzle_rush") {
+    colors = { border: "#ffa726", bg: "rgba(255, 167, 38, 0.08)" };
+  }
   const logo = getPlatformLogo(event.platform);
 
   return `
@@ -411,6 +419,10 @@ export function initOverlay(): void {
       if (event.details.endReason) {
         metaLines.push(event.details.endReason);
       }
+    } else if (event.type === "puzzle_rush") {
+      const score = (extra?.score as number) ?? 0;
+      metaLines.push(`Score: ${score}`);
+      metaLines.push(event.platform);
     } else {
       // Puzzle
       if (event.details.puzzleId) {
