@@ -1,7 +1,7 @@
-import { PendingGame } from "../../types";
+import { PendingGame, StoredUsernames } from "../../types";
 import {
   PENDING_GAMES_KEY,
-  CACHED_USERNAME_KEY,
+  USERNAMES_KEY,
   STORAGE_KEY,
   MAX_PENDING_AGE_MS,
 } from "../../constants";
@@ -49,26 +49,35 @@ function findUsernameFromDom(): string | null {
   return null;
 }
 
-async function getCachedUsername(): Promise<string | null> {
-  const data = await chrome.storage.local.get(CACHED_USERNAME_KEY);
-  return data[CACHED_USERNAME_KEY] ?? null;
-}
-
-async function cacheUsername(username: string): Promise<void> {
-  await chrome.storage.local.set({ [CACHED_USERNAME_KEY]: username });
-}
-
 /**
- * Try to find the username, first from DOM then from cache.
- * If found in DOM, update the cache.
+ * Resolve the chess.com username.
+ * 1. If a manual override exists, use it immediately (no DOM detection).
+ * 2. Otherwise, try DOM detection and save as auto-detected.
+ *    Auto-detected values are always refreshed from DOM when available.
+ * 3. If DOM detection fails, fall back to any existing auto-detected value.
  */
 async function resolveUsername(): Promise<string | null> {
+  const data = await chrome.storage.local.get(USERNAMES_KEY);
+  const stored: StoredUsernames = data[USERNAMES_KEY] ?? {};
+  const entry = stored["chess.com"];
+
+  // Manual override — use it, skip DOM detection entirely
+  if (entry?.source === "manual") {
+    return entry.username;
+  }
+
+  // Try DOM detection
   const fromDom = findUsernameFromDom();
   if (fromDom) {
-    await cacheUsername(fromDom);
+    // Save/refresh auto-detected value
+    stored["chess.com"] = { username: fromDom, source: "auto" };
+    await chrome.storage.local.set({ [USERNAMES_KEY]: stored });
+    console.log(LOG, "Auto-detected username:", fromDom);
     return fromDom;
   }
-  return getCachedUsername();
+
+  // Fall back to existing auto-detected value
+  return entry?.username ?? null;
 }
 
 // ── Pending games storage ─────────────────────────────────────────────

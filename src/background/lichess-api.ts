@@ -1,9 +1,4 @@
-import {
-  ChessEvent,
-  EventResult,
-  LichessApiGame,
-  PlayerColor,
-} from "../types";
+import { ChessEvent, EventResult, LichessApiGame, PlayerColor } from "../types";
 
 const LOG = "[CTG LichessAPI]";
 
@@ -29,7 +24,7 @@ export async function fetchLichessGames(
   username: string,
   max = 10
 ): Promise<LichessApiGame[]> {
-  const url = `https://lichess.org/api/games/user/${username}?max=${max}&sort=dateDesc&finished=true&moves=false`;
+  const url = `https://lichess.org/api/games/user/${username}?max=${max}&sort=dateDesc&finished=true&moves=false&lastFen=true`;
   console.log(LOG, "Fetching:", url);
 
   try {
@@ -71,6 +66,9 @@ export function lichessGameToEvent(
 
   if (!isWhite && !isBlack) return null;
 
+  // Skip aborted games and no-start games
+  if (game.status === "aborted" || game.status === "noStart") return null;
+
   const playerColor: PlayerColor = isWhite ? "white" : "black";
 
   let result: EventResult;
@@ -94,6 +92,7 @@ export function lichessGameToEvent(
       playerColor,
       endReason: STATUS_MAP[game.status] ?? game.status,
       rawResult: game.status,
+      fen: game.lastFen,
       extra: {
         speed: game.speed,
         perf: game.perf,

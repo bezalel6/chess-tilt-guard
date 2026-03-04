@@ -1,7 +1,12 @@
 import { Platform, ChessComApiGame, ChessEvent } from "../types";
 import { mergeEvents } from "../storage";
-import { LAST_SYNC_KEY, MAX_STACK_SIZE_KEY, DEFAULT_MAX_STACK_SIZE } from "../constants";
+import {
+  LAST_SYNC_KEY,
+  MAX_STACK_SIZE_KEY,
+  DEFAULT_MAX_STACK_SIZE,
+} from "../constants";
 import { fetchLichessGames, lichessGameToEvent } from "./lichess-api";
+import { extractFenFromPgn } from "./fen-utils";
 
 const LOG = "[CTG Sync]";
 
@@ -122,6 +127,15 @@ function chessComGameToEvent(
     "50move",
     "timevsinsufficient",
   ]);
+  const ABORT_RESULTS = new Set(["abandoned", "aborted"]);
+
+  // Skip aborted/abandoned games entirely
+  if (
+    ABORT_RESULTS.has(game.white.result) ||
+    ABORT_RESULTS.has(game.black.result)
+  ) {
+    return null;
+  }
 
   let result: "win" | "loss" | "draw";
   if (WIN_RESULTS.has(player.result)) result = "win";
@@ -130,6 +144,8 @@ function chessComGameToEvent(
 
   const descriptive =
     game.white.result === "win" ? game.black.result : game.white.result;
+
+  const fen = game.pgn ? extractFenFromPgn(game.pgn) : null;
 
   return {
     id: `chesscom-game-${game.url}`,
@@ -143,15 +159,14 @@ function chessComGameToEvent(
       playerColor,
       endReason: descriptive,
       rawResult: player.result,
+      fen: fen ?? undefined,
       extra: {
         timeClass: game.time_class,
         timeControl: game.time_control,
         rated: game.rated,
         playerRating: player.rating,
         opponentRating: isWhite ? game.black.rating : game.white.rating,
-        opponentUsername: isWhite
-          ? game.black.username
-          : game.white.username,
+        opponentUsername: isWhite ? game.black.username : game.white.username,
       },
     },
   };
@@ -192,7 +207,10 @@ async function syncChessCom(username: string): Promise<void> {
 
   // Single batch merge — one storage write, no flicker
   await mergeEvents(events);
-  console.log(LOG, `Chess.com sync: ${limited.length} games processed, ${events.length} converted`);
+  console.log(
+    LOG,
+    `Chess.com sync: ${limited.length} games processed, ${events.length} converted`
+  );
 }
 
 // ── Lichess sync ────────────────────────────────────────────────────
@@ -212,7 +230,10 @@ async function syncLichess(username: string): Promise<void> {
 
   // Single batch merge — one storage write, no flicker
   await mergeEvents(events);
-  console.log(LOG, `Lichess sync: ${games.length} games fetched, ${events.length} converted`);
+  console.log(
+    LOG,
+    `Lichess sync: ${games.length} games fetched, ${events.length} converted`
+  );
 }
 
 // ── Public API ──────────────────────────────────────────────────────

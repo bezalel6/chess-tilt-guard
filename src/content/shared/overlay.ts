@@ -2,6 +2,7 @@ import { ChessEvent } from "../../types";
 import { STORAGE_KEY } from "../../constants";
 import { getPlatformLogo } from "./logos";
 import { renderMiniboard } from "./miniboard";
+import { computeStreakInfo, StreakInfo } from "./blocking-logic";
 
 const HOST_ID = "chess-tilt-guard-overlay";
 
@@ -11,12 +12,39 @@ const RESULT_COLORS: Record<string, { border: string; bg: string }> = {
   draw: { border: "#9e9e9e", bg: "rgba(158, 158, 158, 0.08)" },
 };
 
+/** 2x2 chessboard SVG icon for the board button. */
+const BOARD_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="7" height="7" fill="#ccc"/><rect x="7" y="0" width="7" height="7" fill="#666"/><rect x="0" y="7" width="7" height="7" fill="#666"/><rect x="7" y="7" width="7" height="7" fill="#ccc"/></svg>`;
+
 const STYLES = `
   :host {
     all: initial;
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 12px;
     color: #e0e0e0;
+  }
+
+  .ctg-bubble {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    cursor: pointer;
+    z-index: 2147483647;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    transition: transform 0.15s ease;
+    user-select: none;
+  }
+
+  .ctg-bubble:hover {
+    transform: scale(1.12);
   }
 
   .ctg-panel {
@@ -34,10 +62,6 @@ const STYLES = `
     flex-direction: column;
     overflow: hidden;
     transition: max-height 0.25s ease, opacity 0.2s ease;
-  }
-
-  .ctg-panel.collapsed {
-    max-height: 32px;
   }
 
   .ctg-header {
@@ -98,10 +122,6 @@ const STYLES = `
     font-size: 12px;
     color: #aaa;
     transition: transform 0.25s ease;
-  }
-
-  .collapsed .ctg-chevron {
-    transform: rotate(180deg);
   }
 
   .ctg-list {
@@ -179,6 +199,26 @@ const STYLES = `
     text-overflow: ellipsis;
   }
 
+  .ctg-board-btn {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 3px;
+    cursor: pointer;
+    background: none;
+    padding: 0;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .ctg-board-btn:hover {
+    border-color: rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.06);
+  }
+
   .ctg-event-time {
     font-size: 9px;
     color: #666;
@@ -195,7 +235,6 @@ const STYLES = `
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
     padding: 8px;
     z-index: 2147483647;
-    pointer-events: none;
     max-width: 200px;
   }
 
@@ -309,12 +348,29 @@ function buildMetaLine(event: ChessEvent): string {
   return parts.join(" \u00B7 ");
 }
 
+/** Returns bubble text and color based on the current win/loss streak. */
+function getBubbleDisplay(events: ChessEvent[]): { text: string; color: string } {
+  const streak = computeStreakInfo(events);
+  if (streak.consecutiveLosses > 0) {
+    return { text: `L${streak.consecutiveLosses}`, color: "#f44336" };
+  }
+  if (streak.consecutiveWins > 0) {
+    return { text: `W${streak.consecutiveWins}`, color: "#4caf50" };
+  }
+  return { text: "0", color: "#555" };
+}
+
 function renderEvent(event: ChessEvent, index: number): string {
   let colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
   if (event.type === "puzzle_rush") {
     colors = { border: "#ffa726", bg: "rgba(255, 167, 38, 0.08)" };
   }
   const logo = getPlatformLogo(event.platform);
+  const hasFen = !!event.details.fen;
+
+  const boardBtn = hasFen
+    ? `<button class="ctg-board-btn" data-board-idx="${index}" title="Show board">${BOARD_ICON_SVG}</button>`
+    : "";
 
   return `
     <div class="ctg-event" data-url="${escapeHtml(
@@ -330,6 +386,7 @@ function renderEvent(event: ChessEvent, index: number): string {
           )}</div>
           <div class="ctg-event-meta">${escapeHtml(buildMetaLine(event))}</div>
         </div>
+        ${boardBtn}
         <div class="ctg-event-time" data-time-idx="${index}">${getRelativeTime(
     event.timestamp
   )}</div>
@@ -359,6 +416,11 @@ export function initOverlay(): void {
   styleEl.textContent = STYLES;
   shadow.appendChild(styleEl);
 
+  // Bubble element (collapsed state)
+  const bubble = document.createElement("div");
+  bubble.className = "ctg-bubble";
+  shadow.appendChild(bubble);
+
   const panel = document.createElement("div");
   panel.className = "ctg-panel";
   shadow.appendChild(panel);
@@ -371,17 +433,14 @@ export function initOverlay(): void {
   list.className = "ctg-list";
   panel.appendChild(list);
 
-  // Open event URLs in new tab on click
-  list.addEventListener("click", (e) => {
-    const eventEl = (e.target as HTMLElement).closest(".ctg-event");
-    const url = eventEl?.getAttribute("data-url");
-    if (url) window.open(url, "_blank");
-  });
-
-  // Tooltip element for hover previews
+  // Tooltip element for board previews
   const tooltip = document.createElement("div");
   tooltip.className = "ctg-tooltip";
   shadow.appendChild(tooltip);
+
+  let collapsed = false;
+  let currentEvents: ChessEvent[] = [];
+  let activeTooltipIdx: number | null = null;
 
   function buildTooltipContent(event: ChessEvent): string {
     const parts: string[] = [];
@@ -442,85 +501,80 @@ export function initOverlay(): void {
     return parts.join("");
   }
 
-  list.addEventListener(
-    "mouseenter",
-    (e) => {
-      const target = e.target as HTMLElement;
-      const eventEl = target.closest?.(".ctg-event") as HTMLElement | null;
-      if (!eventEl) return;
+  function dismissTooltip(): void {
+    tooltip.classList.remove("visible");
+    activeTooltipIdx = null;
+  }
 
-      const idx = parseInt(eventEl.getAttribute("data-event-idx") ?? "", 10);
-      if (isNaN(idx) || !currentEvents[idx]) return;
+  function showTooltip(idx: number, anchorEl: HTMLElement): void {
+    const event = currentEvents[idx];
+    if (!event) return;
 
-      const content = buildTooltipContent(currentEvents[idx]);
-      if (!content) return;
-
-      tooltip.innerHTML = content;
-      tooltip.classList.add("visible");
-
-      // Position to the left of the panel
-      const panelRect = panel.getBoundingClientRect();
-      const eventRect = eventEl.getBoundingClientRect();
-      tooltip.style.right = `${window.innerWidth - panelRect.left + 8}px`;
-      tooltip.style.top = `${eventRect.top}px`;
-    },
-    true
-  );
-
-  list.addEventListener(
-    "mouseleave",
-    (e) => {
-      const target = e.target as HTMLElement;
-      if (target.closest?.(".ctg-event")) {
-        tooltip.classList.remove("visible");
-      }
-    },
-    true
-  );
-
-  // Also hide on mouseover between items
-  list.addEventListener("mouseover", (e) => {
-    const target = e.target as HTMLElement;
-    const eventEl = target.closest?.(".ctg-event") as HTMLElement | null;
-    if (!eventEl) {
-      tooltip.classList.remove("visible");
-      return;
-    }
-
-    const idx = parseInt(eventEl.getAttribute("data-event-idx") ?? "", 10);
-    if (isNaN(idx) || !currentEvents[idx]) {
-      tooltip.classList.remove("visible");
-      return;
-    }
-
-    const content = buildTooltipContent(currentEvents[idx]);
-    if (!content) {
-      tooltip.classList.remove("visible");
-      return;
-    }
+    const content = buildTooltipContent(event);
+    if (!content) return;
 
     tooltip.innerHTML = content;
     tooltip.classList.add("visible");
+    activeTooltipIdx = idx;
 
+    // Position to the left of the panel
     const panelRect = panel.getBoundingClientRect();
-    const eventRect = eventEl.getBoundingClientRect();
+    const anchorRect = anchorEl.getBoundingClientRect();
     tooltip.style.right = `${window.innerWidth - panelRect.left + 8}px`;
-    tooltip.style.top = `${eventRect.top}px`;
+    tooltip.style.top = `${anchorRect.top}px`;
+  }
+
+  // Unified click handler for the list
+  list.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+
+    // Check if the click is on the board button
+    const boardBtn = target.closest(".ctg-board-btn") as HTMLElement | null;
+    if (boardBtn) {
+      e.stopPropagation();
+      const idx = parseInt(boardBtn.getAttribute("data-board-idx") ?? "", 10);
+      if (isNaN(idx)) return;
+
+      // Toggle: if same tooltip is open, close it
+      if (activeTooltipIdx === idx) {
+        dismissTooltip();
+      } else {
+        const eventEl = boardBtn.closest(".ctg-event") as HTMLElement | null;
+        if (eventEl) showTooltip(idx, eventEl);
+      }
+      return;
+    }
+
+    // Otherwise, dismiss tooltip and navigate
+    dismissTooltip();
+    const eventEl = target.closest(".ctg-event") as HTMLElement | null;
+    const url = eventEl?.getAttribute("data-url");
+    if (url) window.open(url, "_blank");
   });
 
-  let collapsed = false;
-  let currentEvents: ChessEvent[] = [];
+  // Dismiss tooltip when clicking outside the overlay host
+  document.addEventListener("click", (e) => {
+    if (activeTooltipIdx !== null && !(e.target as HTMLElement).closest(`#${HOST_ID}`)) {
+      dismissTooltip();
+    }
+  });
+
+  function updateBubble(): void {
+    const { text, color } = getBubbleDisplay(currentEvents);
+    bubble.textContent = text;
+    bubble.style.background = color;
+  }
 
   function renderHeader(): void {
-    const count = currentEvents.length;
+    const { text, color } = getBubbleDisplay(currentEvents);
     header.innerHTML = `
       <div class="ctg-title">
         CTG
-        ${count > 0 ? `<span class="ctg-badge">${count}</span>` : ""}
+        <span class="ctg-badge" style="background:${color}">${text}</span>
       </div>
       <div class="ctg-controls">
         <button class="ctg-btn ctg-clear-btn">Clear</button>
-        <span class="ctg-chevron">${collapsed ? "\u25B2" : "\u25BC"}</span>
+        <span class="ctg-chevron">\u25BC</span>
       </div>
     `;
 
@@ -532,14 +586,29 @@ export function initOverlay(): void {
 
   function render(events: ChessEvent[]): void {
     currentEvents = events;
-    renderHeader();
+    dismissTooltip();
+
+    if (collapsed) {
+      updateBubble();
+    } else {
+      renderHeader();
+    }
     list.innerHTML = renderList(events);
   }
 
-  // Toggle panel collapse
+  // Header click → collapse to bubble
   header.addEventListener("click", () => {
-    collapsed = !collapsed;
-    panel.classList.toggle("collapsed", collapsed);
+    collapsed = true;
+    panel.style.display = "none";
+    bubble.style.display = "flex";
+    updateBubble();
+  });
+
+  // Bubble click → expand to panel
+  bubble.addEventListener("click", () => {
+    collapsed = false;
+    bubble.style.display = "none";
+    panel.style.display = "flex";
     renderHeader();
   });
 

@@ -1,4 +1,5 @@
-import { CACHED_LICHESS_USERNAME_KEY } from "../../constants";
+import { StoredUsernames } from "../../types";
+import { USERNAMES_KEY } from "../../constants";
 
 const LOG = "[CTG LichessUser]";
 
@@ -25,25 +26,31 @@ function findUsernameFromDom(): string | null {
   return null;
 }
 
-async function getCachedUsername(): Promise<string | null> {
-  const data = await chrome.storage.local.get(CACHED_LICHESS_USERNAME_KEY);
-  return data[CACHED_LICHESS_USERNAME_KEY] ?? null;
-}
-
-async function cacheUsername(username: string): Promise<void> {
-  await chrome.storage.local.set({ [CACHED_LICHESS_USERNAME_KEY]: username });
-}
-
 /**
- * Try to find the Lichess username, first from DOM then from cache.
- * If found in DOM, update the cache.
+ * Resolve the Lichess username.
+ * 1. If a manual override exists, use it immediately (no DOM detection).
+ * 2. Otherwise, try DOM detection and save as auto-detected.
+ * 3. Fall back to any existing auto-detected value.
  */
 export async function resolveLichessUsername(): Promise<string | null> {
+  const data = await chrome.storage.local.get(USERNAMES_KEY);
+  const stored: StoredUsernames = data[USERNAMES_KEY] ?? {};
+  const entry = stored.lichess;
+
+  // Manual override — use it, skip DOM detection entirely
+  if (entry?.source === "manual") {
+    return entry.username;
+  }
+
+  // Try DOM detection
   const fromDom = findUsernameFromDom();
   if (fromDom) {
-    await cacheUsername(fromDom);
-    console.log(LOG, "Resolved username:", fromDom);
+    stored.lichess = { username: fromDom, source: "auto" };
+    await chrome.storage.local.set({ [USERNAMES_KEY]: stored });
+    console.log(LOG, "Auto-detected username:", fromDom);
     return fromDom;
   }
-  return getCachedUsername();
+
+  // Fall back to existing auto-detected value
+  return entry?.username ?? null;
 }

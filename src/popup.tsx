@@ -25,6 +25,9 @@ const RESULT_COLORS: Record<string, { border: string; bg: string }> = {
   draw: { border: "#9e9e9e", bg: "rgba(158, 158, 158, 0.08)" },
 };
 
+/** 2x2 chessboard SVG icon for the board button. */
+const BOARD_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="7" height="7" fill="#ccc"/><rect x="7" y="0" width="7" height="7" fill="#666"/><rect x="0" y="7" width="7" height="7" fill="#666"/><rect x="7" y="7" width="7" height="7" fill="#ccc"/></svg>`;
+
 function getRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) return "just now";
@@ -184,9 +187,9 @@ function buildTooltipMeta(event: ChessEvent): string[] {
   return lines;
 }
 
-const EventTooltip: React.FC<{
+const BoardTooltip: React.FC<{
   event: ChessEvent;
-  anchorRect: DOMRect | null;
+  anchorRect: DOMRect;
 }> = ({ event, anchorRect }) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number } | null>(null);
@@ -197,21 +200,19 @@ const EventTooltip: React.FC<{
 
   // Measure tooltip after render and clamp to viewport
   useEffect(() => {
-    if (!anchorRect || !tooltipRef.current || !hasContent) {
+    if (!tooltipRef.current || !hasContent) {
       setPos(null);
       return;
     }
     const tooltipH = tooltipRef.current.offsetHeight;
     const viewportH = window.innerHeight;
-    // Try to vertically center on the anchor row
     const cardCenter = anchorRect.top + anchorRect.height / 2;
     let top = cardCenter - tooltipH / 2;
-    // Clamp within viewport with 4px margin
     top = Math.max(4, Math.min(top, viewportH - tooltipH - 4));
     setPos({ top });
   }, [anchorRect, hasContent]);
 
-  if (!anchorRect || !hasContent) return null;
+  if (!hasContent) return null;
 
   const miniboardHtml = hasFen ? renderMiniboard(event.details.fen!) : "";
 
@@ -229,7 +230,6 @@ const EventTooltip: React.FC<{
         boxShadow: "0 6px 24px rgba(0, 0, 0, 0.6)",
         padding: 8,
         zIndex: 999999,
-        pointerEvents: "none",
         maxWidth: 220,
       }}
     >
@@ -265,18 +265,26 @@ const EventTooltip: React.FC<{
 
 const EventCard: React.FC<{
   event: ChessEvent;
-  onHover: (event: ChessEvent, rect: DOMRect | null) => void;
-}> = ({ event, onHover }) => {
+  isExpanded: boolean;
+  onToggleBoard: (event: ChessEvent, rect: DOMRect) => void;
+}> = ({ event, isExpanded, onToggleBoard }) => {
   let colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
   if (event.type === "puzzle_rush") {
     colors = { border: "#ffa726", bg: "rgba(255, 167, 38, 0.08)" };
   }
   const cardRef = useRef<HTMLDivElement>(null);
+  const hasFen = !!event.details.fen;
 
   const handleClick = () => {
     if (event.url) {
       chrome.tabs.create({ url: event.url });
     }
+  };
+
+  const handleBoardClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const rect = cardRef.current?.getBoundingClientRect();
+    if (rect) onToggleBoard(event, rect);
   };
 
   return (
@@ -293,12 +301,9 @@ const EventCard: React.FC<{
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.filter = "brightness(1.25)";
-        const rect = cardRef.current?.getBoundingClientRect() ?? null;
-        onHover(event, rect);
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLElement).style.filter = "none";
-        onHover(event, null);
       }}
     >
       <div
@@ -320,6 +325,27 @@ const EventCard: React.FC<{
             {buildMetaLine(event)}
           </div>
         </div>
+        {hasFen && (
+          <button
+            onClick={handleBoardClick}
+            title="Show board"
+            style={{
+              flexShrink: 0,
+              width: 22,
+              height: 22,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: `1px solid ${isExpanded ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.15)"}`,
+              borderRadius: 3,
+              cursor: "pointer",
+              background: isExpanded ? "rgba(255,255,255,0.06)" : "none",
+              padding: 0,
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+            dangerouslySetInnerHTML={{ __html: BOARD_ICON_SVG }}
+          />
+        )}
         <div style={{ fontSize: 10, color: "#666", flexShrink: 0 }}>
           {getRelativeTime(event.timestamp)}
         </div>
@@ -354,20 +380,25 @@ const Popup: React.FC = () => {
   const [lossThreshold, setLossThreshold] = useState(DEFAULT_LOSS_STREAK_THRESHOLD);
   const [puzzleWins, setPuzzleWins] = useState(DEFAULT_PUZZLE_WINS_TO_UNBLOCK);
   const [rushMinScore, setRushMinScore] = useState(DEFAULT_PUZZLE_RUSH_MIN_SCORE);
-  const [hoveredEvent, setHoveredEvent] = useState<ChessEvent | null>(null);
-  const [tooltipRect, setTooltipRect] = useState<DOMRect | null>(null);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [expandedAnchorRect, setExpandedAnchorRect] = useState<DOMRect | null>(null);
   const [usernames, setUsernames] = useState<StoredUsernames>({});
   const [editChessCom, setEditChessCom] = useState("");
   const [editLichess, setEditLichess] = useState("");
   const [accountsOpen, setAccountsOpen] = useState(false);
 
-  const handleEventHover = (event: ChessEvent, rect: DOMRect | null) => {
-    if (rect) {
-      setHoveredEvent(event);
-      setTooltipRect(rect);
+  const expandedEvent = expandedEventId
+    ? events.find((e) => e.id === expandedEventId) ?? null
+    : null;
+
+  const handleToggleBoard = (event: ChessEvent, rect: DOMRect) => {
+    if (expandedEventId === event.id) {
+      // Toggle off
+      setExpandedEventId(null);
+      setExpandedAnchorRect(null);
     } else {
-      setHoveredEvent(null);
-      setTooltipRect(null);
+      setExpandedEventId(event.id);
+      setExpandedAnchorRect(rect);
     }
   };
 
@@ -398,7 +429,6 @@ const Popup: React.FC = () => {
       [key: string]: chrome.storage.StorageChange;
     }) => {
       if (changes[STORAGE_KEY] || changes[SETTINGS_KEY]) {
-        // Use functional updates to access latest state
         chrome.storage.local.get([STORAGE_KEY, SETTINGS_KEY], (data) => {
           const evts = data[STORAGE_KEY] ?? [];
           const s: UserSettings | undefined = data[SETTINGS_KEY];
@@ -789,13 +819,32 @@ const Popup: React.FC = () => {
             <EventCard
               key={event.id}
               event={event}
-              onHover={handleEventHover}
+              isExpanded={expandedEventId === event.id}
+              onToggleBoard={handleToggleBoard}
             />
           ))
         )}
       </div>
-      {hoveredEvent && tooltipRect && (
-        <EventTooltip event={hoveredEvent} anchorRect={tooltipRect} />
+      {/* Backdrop to dismiss tooltip */}
+      {expandedEvent && expandedAnchorRect && (
+        <div
+          onClick={() => {
+            setExpandedEventId(null);
+            setExpandedAnchorRect(null);
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 999998,
+            background: "transparent",
+          }}
+        />
+      )}
+      {expandedEvent && expandedAnchorRect && (
+        <BoardTooltip event={expandedEvent} anchorRect={expandedAnchorRect} />
       )}
     </div>
   );

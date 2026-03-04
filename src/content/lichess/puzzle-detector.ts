@@ -1,7 +1,10 @@
 import { sendChessEvent, generateEventId } from "../shared/messaging";
 import { EventResult } from "../../types";
 
-const seenPuzzles = new Set<string>();
+const LOG = "[CTG LichessPuzzle]";
+
+/** Puzzle IDs that have already been handled this session. */
+const handledPuzzleIds = new Set<string>();
 let observing = false;
 
 function isPuzzlePage(): boolean {
@@ -11,10 +14,100 @@ function isPuzzlePage(): boolean {
   );
 }
 
+/**
+ * Extract puzzle result and ID from the session bar's `.current` entry.
+ *
+ * The session bar contains links like:
+ *   <a class="result-false current" href="/training/mix/Cvya3">-16</a>
+ *
+ * The `.current` class marks the active puzzle, and `result-true` / `result-false`
+ * tells us the outcome. The puzzle ID is the last segment of the href.
+ */
+function getResultFromSessionBar(): {
+  puzzleId: string;
+  result: EventResult;
+} | null {
+  const currentLink = document.querySelector(
+    ".puzzle__session a.current"
+  ) as HTMLAnchorElement | null;
+  if (!currentLink) {
+    console.log(LOG, "No .puzzle__session a.current found");
+    return null;
+  }
+
+  // Determine result from class
+  let result: EventResult;
+  if (currentLink.classList.contains("result-true")) {
+    result = "win";
+  } else if (currentLink.classList.contains("result-false")) {
+    result = "loss";
+  } else {
+    console.log(
+      LOG,
+      "Current session link has no result class:",
+      Array.from(currentLink.classList).join(" ")
+    );
+    return null;
+  }
+
+  // Extract puzzle ID from href (last path segment)
+  const href = currentLink.getAttribute("href") ?? "";
+  const segments = href.split("/").filter(Boolean);
+  const puzzleId = segments[segments.length - 1];
+
+  // Guard against category slugs like "mix", "themes", etc.
+  if (!puzzleId || ["training", "streak", "mix", "themes"].includes(puzzleId)) {
+    console.log(LOG, "Session link href has no puzzle ID:", href);
+    return null;
+  }
+
+  console.log(
+    LOG,
+    `Session bar .current: puzzle=${puzzleId}, result=${result}, href=${href}`
+  );
+  return { puzzleId, result };
+}
+
+/**
+ * Fallback: detect result from the feedback panel content.
+ * Used when the session bar doesn't have a usable `.current` entry.
+ */
+function getResultFromFeedback(): EventResult | null {
+  const feedback = document.querySelector(".puzzle__feedback.after");
+  if (!feedback) return null;
+
+  // .complete = solved, .good = correct move (both mean win)
+  const icon = feedback.querySelector(".complete, .good");
+  const result: EventResult = icon ? "win" : "loss";
+  console.log(
+    LOG,
+    `Feedback fallback: ${result} (found ${icon ? ".complete/.good" : "neither"})`
+  );
+  return result;
+}
+
+/**
+ * Fallback: extract puzzle ID from the side panel metadata.
+ * Looks for: <p>Puzzle <a href="/training/Cvya3">#Cvya3</a></p>
+ */
+function getPuzzleIdFromMeta(): string | null {
+  const link = document.querySelector(
+    '.puzzle__side__metas a[href^="/training/"]'
+  );
+  if (!link) return null;
+
+  const href = link.getAttribute("href") ?? "";
+  const segments = href.split("/").filter(Boolean);
+  const id = segments[segments.length - 1];
+  return id && id !== "training" ? id : null;
+}
+
 export function initLichessPuzzleDetector(): void {
   if (!isPuzzlePage()) return;
   if (observing) return;
   observing = true;
+
+  console.log(LOG, "Observing puzzle feedback on", location.pathname);
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
@@ -36,33 +129,44 @@ export function initLichessPuzzleDetector(): void {
 }
 
 function handlePuzzleResult(): void {
-  // Check the most recent result in the session bar
-  const sessionLinks = document.querySelectorAll(".puzzle__session a");
-  const lastLink = sessionLinks[sessionLinks.length - 1];
-
+  let puzzleId: string | null = null;
   let result: EventResult;
-  let sessionDetected = false;
+  let detectionMethod: string;
 
-  if (lastLink?.classList.contains("result-true")) {
-    result = "win";
-    sessionDetected = true;
-  } else if (lastLink?.classList.contains("result-false")) {
-    result = "loss";
-    sessionDetected = true;
+  // Primary: session bar .current entry (has both puzzle ID and result)
+  const sessionResult = getResultFromSessionBar();
+
+  if (sessionResult) {
+    puzzleId = sessionResult.puzzleId;
+    result = sessionResult.result;
+    detectionMethod = "dom-puzzle-session-current";
   } else {
-    // Fallback: check the feedback content directly
-    const feedback = document.querySelector(".puzzle__feedback.after");
-    const icon = feedback?.querySelector(".complete, .good");
-    result = icon ? "win" : "loss";
+    // Fallback: feedback panel content
+    const feedbackResult = getResultFromFeedback();
+    if (!feedbackResult) {
+      console.log(LOG, "No result from session bar or feedback panel");
+      return;
+    }
+    result = feedbackResult;
+    detectionMethod = "dom-puzzle-feedback-fallback";
+    // Try to get puzzle ID from the metadata panel
+    puzzleId = getPuzzleIdFromMeta();
   }
 
-  const dedupKey = `puzzle-${Math.floor(Date.now() / 3000)}`;
-  if (seenPuzzles.has(dedupKey)) return;
-  seenPuzzles.add(dedupKey);
+  // Dedup by puzzle ID
+  if (puzzleId && handledPuzzleIds.has(puzzleId)) {
+    console.log(LOG, `Puzzle ${puzzleId}: already handled, skipping`);
+    return;
+  }
 
-  // Extract puzzle ID from URL: /training/AbCdE
-  const urlParts = location.pathname.split("/");
-  const puzzleId = urlParts[urlParts.length - 1] || undefined;
+  console.log(
+    LOG,
+    `Puzzle ${puzzleId ?? "unknown"}: ${result} via ${detectionMethod}`
+  );
+
+  if (puzzleId) {
+    handledPuzzleIds.add(puzzleId);
+  }
 
   sendChessEvent({
     id: generateEventId("lichess", "puzzle"),
@@ -72,19 +176,12 @@ function handlePuzzleResult(): void {
     timestamp: Date.now(),
     url: location.href,
     details: {
-      detectionMethod: sessionDetected
-        ? "dom-puzzle-session-bar"
-        : "dom-puzzle-feedback-fallback",
-      matchedSelector: sessionDetected
-        ? ".puzzle__session a.result-true / .result-false"
-        : ".puzzle__feedback.after .complete / .good",
-      puzzleId,
-      extra: {
-        sessionLinkCount: sessionLinks.length,
-        lastLinkClasses: lastLink
-          ? Array.from(lastLink.classList).join(" ")
-          : "none",
-      },
+      detectionMethod,
+      matchedSelector:
+        detectionMethod === "dom-puzzle-session-current"
+          ? ".puzzle__session a.current"
+          : ".puzzle__feedback.after",
+      puzzleId: puzzleId ?? undefined,
     },
   });
 }
