@@ -10,6 +10,7 @@ export const DEFAULT_MAX_STACK_SIZE = 20;
 export const SETTINGS_KEY = "chess_tilt_guard_settings";
 export const DEFAULT_LOSS_STREAK_THRESHOLD = 2;
 export const DEFAULT_PUZZLE_WINS_TO_UNBLOCK = 2;
+export const DEFAULT_PUZZLE_RUSH_MIN_SCORE = 5;
 
 /** @deprecated Migration-only. Use USERNAMES_KEY instead. */
 export const CACHED_USERNAME_KEY = "chess_tilt_guard_username";

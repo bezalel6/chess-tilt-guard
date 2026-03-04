@@ -10,6 +10,7 @@ import {
   SETTINGS_KEY,
   DEFAULT_LOSS_STREAK_THRESHOLD,
   DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+  DEFAULT_PUZZLE_RUSH_MIN_SCORE,
 } from "./constants";
 import {
   BlockingState,
@@ -328,11 +329,14 @@ const Popup: React.FC = () => {
     puzzleWinsAfterStreak: 0,
     puzzleWinsNeeded: 0,
     puzzleWinsRequired: DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+    rushScoreAfterStreak: 0,
+    rushScoreRequired: DEFAULT_PUZZLE_RUSH_MIN_SCORE,
   });
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [maxStackSize, setMaxStackSize] = useState(DEFAULT_MAX_STACK_SIZE);
   const [lossThreshold, setLossThreshold] = useState(DEFAULT_LOSS_STREAK_THRESHOLD);
   const [puzzleWins, setPuzzleWins] = useState(DEFAULT_PUZZLE_WINS_TO_UNBLOCK);
+  const [rushMinScore, setRushMinScore] = useState(DEFAULT_PUZZLE_RUSH_MIN_SCORE);
   const [hoveredEvent, setHoveredEvent] = useState<ChessEvent | null>(null);
   const [tooltipRect, setTooltipRect] = useState<DOMRect | null>(null);
   const [usernames, setUsernames] = useState<StoredUsernames>({});
@@ -358,10 +362,12 @@ const Popup: React.FC = () => {
         const settings: UserSettings | undefined = data[SETTINGS_KEY];
         const lt = settings?.lossStreakThreshold ?? DEFAULT_LOSS_STREAK_THRESHOLD;
         const pw = settings?.puzzleWinsToUnblock ?? DEFAULT_PUZZLE_WINS_TO_UNBLOCK;
+        const rms = settings?.puzzleRushMinScore ?? DEFAULT_PUZZLE_RUSH_MIN_SCORE;
         setLossThreshold(lt);
         setPuzzleWins(pw);
+        setRushMinScore(rms);
         setEvents(stored);
-        setBlockingState(computeBlockingState(stored, lt, pw));
+        setBlockingState(computeBlockingState(stored, lt, pw, rms));
         setOverlayVisible(data[OVERLAY_VISIBLE_KEY] !== false);
         setMaxStackSize(data[MAX_STACK_SIZE_KEY] ?? DEFAULT_MAX_STACK_SIZE);
         const storedUsernames: StoredUsernames = data[USERNAMES_KEY] ?? {};
@@ -381,10 +387,12 @@ const Popup: React.FC = () => {
           const s: UserSettings | undefined = data[SETTINGS_KEY];
           const lt = s?.lossStreakThreshold ?? DEFAULT_LOSS_STREAK_THRESHOLD;
           const pw = s?.puzzleWinsToUnblock ?? DEFAULT_PUZZLE_WINS_TO_UNBLOCK;
+          const rms = s?.puzzleRushMinScore ?? DEFAULT_PUZZLE_RUSH_MIN_SCORE;
           setLossThreshold(lt);
           setPuzzleWins(pw);
+          setRushMinScore(rms);
           setEvents(evts);
-          setBlockingState(computeBlockingState(evts, lt, pw));
+          setBlockingState(computeBlockingState(evts, lt, pw, rms));
         });
       }
       if (changes[OVERLAY_VISIBLE_KEY]) {
@@ -404,7 +412,7 @@ const Popup: React.FC = () => {
   const clearHistory = () => {
     chrome.storage.local.remove(STORAGE_KEY);
     setEvents([]);
-    setBlockingState(computeBlockingState([], lossThreshold, puzzleWins));
+    setBlockingState(computeBlockingState([], lossThreshold, puzzleWins, rushMinScore));
   };
 
   const toggleOverlay = () => {
@@ -419,14 +427,16 @@ const Popup: React.FC = () => {
     chrome.storage.local.set({ [MAX_STACK_SIZE_KEY]: clamped });
   };
 
-  const updateSettings = (lt: number, pw: number) => {
+  const updateSettings = (lt: number, pw: number, rms: number) => {
     const settings: UserSettings = {
       lossStreakThreshold: Math.max(1, Math.min(10, lt)),
       puzzleWinsToUnblock: Math.max(1, Math.min(10, pw)),
+      puzzleRushMinScore: Math.max(1, Math.min(50, rms)),
     };
     setLossThreshold(settings.lossStreakThreshold);
     setPuzzleWins(settings.puzzleWinsToUnblock);
-    setBlockingState(computeBlockingState(events, settings.lossStreakThreshold, settings.puzzleWinsToUnblock));
+    setRushMinScore(settings.puzzleRushMinScore);
+    setBlockingState(computeBlockingState(events, settings.lossStreakThreshold, settings.puzzleWinsToUnblock, settings.puzzleRushMinScore));
     chrome.storage.local.set({ [SETTINGS_KEY]: settings });
   };
 
@@ -535,7 +545,7 @@ const Popup: React.FC = () => {
         <span>Losses to block</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
-            onClick={() => updateSettings(lossThreshold - 1, puzzleWins)}
+            onClick={() => updateSettings(lossThreshold - 1, puzzleWins, rushMinScore)}
             style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
           >
             &minus;
@@ -544,7 +554,7 @@ const Popup: React.FC = () => {
             {lossThreshold}
           </span>
           <button
-            onClick={() => updateSettings(lossThreshold + 1, puzzleWins)}
+            onClick={() => updateSettings(lossThreshold + 1, puzzleWins, rushMinScore)}
             style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
           >
             +
@@ -566,7 +576,7 @@ const Popup: React.FC = () => {
         <span>Puzzles to unblock</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
-            onClick={() => updateSettings(lossThreshold, puzzleWins - 1)}
+            onClick={() => updateSettings(lossThreshold, puzzleWins - 1, rushMinScore)}
             style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
           >
             &minus;
@@ -575,7 +585,7 @@ const Popup: React.FC = () => {
             {puzzleWins}
           </span>
           <button
-            onClick={() => updateSettings(lossThreshold, puzzleWins + 1)}
+            onClick={() => updateSettings(lossThreshold, puzzleWins + 1, rushMinScore)}
             style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
           >
             +

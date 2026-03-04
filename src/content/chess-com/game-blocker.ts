@@ -4,6 +4,7 @@ import {
   SETTINGS_KEY,
   DEFAULT_LOSS_STREAK_THRESHOLD,
   DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+  DEFAULT_PUZZLE_RUSH_MIN_SCORE,
 } from "../../constants";
 import { BlockingState, computeBlockingState } from "../shared/blocking-logic";
 import { showBlockingModal } from "../shared/blocking-modal";
@@ -62,12 +63,15 @@ let cachedState: BlockingState = {
   puzzleWinsAfterStreak: 0,
   puzzleWinsNeeded: 0,
   puzzleWinsRequired: DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+  rushScoreAfterStreak: 0,
+  rushScoreRequired: DEFAULT_PUZZLE_RUSH_MIN_SCORE,
 };
 let cachedLossThreshold = DEFAULT_LOSS_STREAK_THRESHOLD;
 let cachedPuzzleWins = DEFAULT_PUZZLE_WINS_TO_UNBLOCK;
+let cachedRushMinScore = DEFAULT_PUZZLE_RUSH_MIN_SCORE;
 
 function recompute(events: ChessEvent[]): void {
-  cachedState = computeBlockingState(events, cachedLossThreshold, cachedPuzzleWins);
+  cachedState = computeBlockingState(events, cachedLossThreshold, cachedPuzzleWins, cachedRushMinScore);
   console.log(LOG, "Blocking state updated:", cachedState);
 }
 
@@ -84,6 +88,7 @@ export function initChessComGameBlocker(): void {
     if (settings) {
       cachedLossThreshold = settings.lossStreakThreshold;
       cachedPuzzleWins = settings.puzzleWinsToUnblock;
+      cachedRushMinScore = settings.puzzleRushMinScore ?? DEFAULT_PUZZLE_RUSH_MIN_SCORE;
     }
     recompute(data[STORAGE_KEY] ?? []);
   });
@@ -104,6 +109,7 @@ export function initChessComGameBlocker(): void {
       if (settings) {
         cachedLossThreshold = settings.lossStreakThreshold;
         cachedPuzzleWins = settings.puzzleWinsToUnblock;
+        cachedRushMinScore = settings.puzzleRushMinScore ?? DEFAULT_PUZZLE_RUSH_MIN_SCORE;
       }
       needsRecompute = true;
     }

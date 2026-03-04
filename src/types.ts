@@ -1,4 +1,4 @@
-export type EventType = "game" | "puzzle";
+export type EventType = "game" | "puzzle" | "puzzle_rush";
 export type EventResult = "win" | "loss" | "draw";
 export type Platform = "chess.com" | "lichess";
 export type PlayerColor = "white" | "black";
@@ -125,6 +125,7 @@ export interface StoredUsernames {
 export interface UserSettings {
   lossStreakThreshold: number;
   puzzleWinsToUnblock: number;
+  puzzleRushMinScore: number;
 }
 
 export type BackgroundMessage =

@@ -2,6 +2,7 @@ import { ChessEvent } from "../../types";
 import {
   DEFAULT_LOSS_STREAK_THRESHOLD,
   DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+  DEFAULT_PUZZLE_RUSH_MIN_SCORE,
 } from "../../constants";
 
 export interface BlockingState {
@@ -11,6 +12,10 @@ export interface BlockingState {
   puzzleWinsNeeded: number;
   /** Total puzzle wins required to unblock (for display). */
   puzzleWinsRequired: number;
+  /** Best rush score since the loss streak (0 if none). */
+  rushScoreAfterStreak: number;
+  /** Threshold from settings. */
+  rushScoreRequired: number;
 }
 
 /** Badge-friendly streak summary for the extension icon. */
@@ -68,7 +73,8 @@ export function computeStreakInfo(events: ChessEvent[]): StreakInfo {
 export function computeBlockingState(
   events: ChessEvent[],
   lossStreakThreshold = DEFAULT_LOSS_STREAK_THRESHOLD,
-  puzzleWinsToUnblock = DEFAULT_PUZZLE_WINS_TO_UNBLOCK
+  puzzleWinsToUnblock = DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+  puzzleRushMinScore = DEFAULT_PUZZLE_RUSH_MIN_SCORE
 ): BlockingState {
   const NOT_BLOCKED: BlockingState = {
     blocked: false,
@@ -76,6 +82,8 @@ export function computeBlockingState(
     puzzleWinsAfterStreak: 0,
     puzzleWinsNeeded: 0,
     puzzleWinsRequired: puzzleWinsToUnblock,
+    rushScoreAfterStreak: 0,
+    rushScoreRequired: puzzleRushMinScore,
   };
 
   if (events.length === 0) return NOT_BLOCKED;
@@ -113,6 +121,16 @@ export function computeBlockingState(
     }
   }
 
+  // Step 4b: Check puzzle rush events newer than the most recent game
+  const recentRushes = events.filter(
+    (e) => e.type === "puzzle_rush" && e.timestamp > mostRecentGameTimestamp
+  );
+  let rushScoreAfterStreak = 0;
+  for (const rush of recentRushes) {
+    const score = (rush.details.extra?.score as number) ?? 0;
+    if (score > rushScoreAfterStreak) rushScoreAfterStreak = score;
+  }
+
   // Step 5: Enough puzzle wins to unblock
   if (puzzleWinsAfterStreak >= puzzleWinsToUnblock) {
     return {
@@ -121,6 +139,21 @@ export function computeBlockingState(
       puzzleWinsAfterStreak,
       puzzleWinsNeeded: 0,
       puzzleWinsRequired: puzzleWinsToUnblock,
+      rushScoreAfterStreak,
+      rushScoreRequired: puzzleRushMinScore,
+    };
+  }
+
+  // Step 5b: Rush score meets threshold → unblock
+  if (rushScoreAfterStreak >= puzzleRushMinScore) {
+    return {
+      blocked: false,
+      consecutiveLosses,
+      puzzleWinsAfterStreak,
+      puzzleWinsNeeded: puzzleWinsToUnblock - puzzleWinsAfterStreak,
+      puzzleWinsRequired: puzzleWinsToUnblock,
+      rushScoreAfterStreak,
+      rushScoreRequired: puzzleRushMinScore,
     };
   }
 
@@ -131,5 +164,7 @@ export function computeBlockingState(
     puzzleWinsAfterStreak,
     puzzleWinsNeeded: puzzleWinsToUnblock - puzzleWinsAfterStreak,
     puzzleWinsRequired: puzzleWinsToUnblock,
+    rushScoreAfterStreak,
+    rushScoreRequired: puzzleRushMinScore,
   };
 }
