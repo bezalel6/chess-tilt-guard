@@ -142,10 +142,12 @@ export function showBlockingModal(
 
   const puzzleUrl = PUZZLE_URLS[platform];
   const winsNeeded = state.puzzleWinsNeeded;
-  const progress =
+  const puzzleProgress =
     state.puzzleWinsAfterStreak > 0
       ? `You've solved ${state.puzzleWinsAfterStreak} so far — <strong>${winsNeeded} more</strong> to go.`
       : `Solve <strong>${winsNeeded} puzzles</strong> in a row to unlock.`;
+
+  const rushInfo = `Or score <strong>${state.rushScoreRequired}+</strong> in Puzzle Rush.`;
 
   backdrop.innerHTML = `
     <div class="ctg-modal-card">
@@ -155,7 +157,7 @@ export function showBlockingModal(
       <div class="ctg-modal-streak">${state.consecutiveLosses} losses in a row</div>
       <p class="ctg-modal-desc">
         Playing on tilt leads to more losses. Cool down with some puzzles first.
-        ${progress}
+        ${puzzleProgress} ${rushInfo}
       </p>
       <a class="ctg-modal-puzzle-btn" href="${puzzleUrl}">
         Go to Puzzles

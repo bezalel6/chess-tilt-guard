@@ -110,10 +110,15 @@ function getPlatformSvg(platform: Platform): string {
 const BlockingBanner: React.FC<{ state: BlockingState }> = ({ state }) => {
   if (!state.blocked) return null;
 
-  const progress =
+  const puzzleProgress =
     state.puzzleWinsAfterStreak > 0
       ? `${state.puzzleWinsAfterStreak}/${state.puzzleWinsRequired} puzzles solved`
-      : `Solve ${state.puzzleWinsRequired} puzzles in a row to unlock`;
+      : `Solve ${state.puzzleWinsRequired} puzzles in a row`;
+
+  const rushProgress =
+    state.rushScoreAfterStreak > 0
+      ? `Best rush: ${state.rushScoreAfterStreak}/${state.rushScoreRequired}`
+      : `or score ${state.rushScoreRequired}+ in Puzzle Rush`;
 
   return (
     <div
@@ -132,7 +137,7 @@ const BlockingBanner: React.FC<{ state: BlockingState }> = ({ state }) => {
           Game Blocking Active
         </div>
         <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>
-          {state.consecutiveLosses} losses in a row &middot; {progress}
+          {state.consecutiveLosses} losses in a row &middot; {puzzleProgress} {rushProgress}
         </div>
       </div>
     </div>
@@ -598,6 +603,37 @@ const Popup: React.FC = () => {
           </span>
           <button
             onClick={() => updateSettings(lossThreshold, puzzleWins + 1, rushMinScore)}
+            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "6px 12px",
+          borderBottom: "1px solid #2d2d44",
+          fontSize: 11,
+          color: "#888",
+        }}
+      >
+        <span>Rush score to unblock</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            onClick={() => updateSettings(lossThreshold, puzzleWins, rushMinScore - 1)}
+            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
+          >
+            &minus;
+          </button>
+          <span style={{ color: "#e0e0e0", minWidth: 20, textAlign: "center" }}>
+            {rushMinScore}
+          </span>
+          <button
+            onClick={() => updateSettings(lossThreshold, puzzleWins, rushMinScore + 1)}
             style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
           >
             +
