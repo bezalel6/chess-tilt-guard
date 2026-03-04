@@ -1,5 +1,6 @@
 import { initChessComGameDetector } from "./game-detector";
 import { initChessComPuzzleDetector } from "./puzzle-detector";
+import { initChessComPuzzleRushDetector } from "./puzzle-rush-detector";
 import { initChessComGameBlocker } from "./game-blocker";
 import { watchNavigation } from "../shared/navigation";
 import { initOverlay } from "../shared/overlay";
@@ -13,6 +14,7 @@ function init(): void {
   console.log("[Chess Tilt Guard] Chess.com content script loaded");
   initChessComGameDetector();
   initChessComPuzzleDetector();
+  initChessComPuzzleRushDetector();
   initChessComGameBlocker();
   triggerSync();
 
@@ -38,6 +40,7 @@ watchNavigation(() => {
   // Re-run detectors on SPA navigation (chess.com is a SPA)
   // Note: puzzle detector manages its own navigation watching internally
   initChessComGameDetector();
+  initChessComPuzzleRushDetector();
   initChessComGameBlocker();
   triggerSync();
 });
