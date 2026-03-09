@@ -1,5 +1,5 @@
 import { ChessEvent } from "../../types";
-import { STORAGE_KEY } from "../../constants";
+import { STORAGE_KEY, BOARD_SIZE_KEY, DEFAULT_BOARD_SIZE } from "../../constants";
 import { getPlatformLogo } from "./logos";
 import { renderMiniboard } from "./miniboard";
 import { computeStreakInfo, StreakInfo } from "./blocking-logic";
@@ -235,7 +235,7 @@ const STYLES = `
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
     padding: 8px;
     z-index: 2147483647;
-    max-width: 200px;
+    max-width: 280px;
   }
 
   .ctg-tooltip.visible {
@@ -335,6 +335,10 @@ function buildMetaLine(event: ChessEvent): string {
       const formatted = formatTimeControl(timeControl);
       if (formatted) parts.push(formatted);
     }
+  }
+
+  if (extra?.playerRating) {
+    parts.push(String(extra.playerRating));
   }
 
   if (event.details.endReason) {
@@ -438,9 +442,14 @@ export function initOverlay(): void {
   tooltip.className = "ctg-tooltip";
   shadow.appendChild(tooltip);
 
-  let collapsed = false;
+  let collapsed = true;
   let currentEvents: ChessEvent[] = [];
   let activeTooltipIdx: number | null = null;
+  let boardSize = DEFAULT_BOARD_SIZE;
+
+  // Start collapsed: bubble visible, panel hidden
+  panel.style.display = "none";
+  bubble.style.display = "flex";
 
   function buildTooltipContent(event: ChessEvent): string {
     const parts: string[] = [];
@@ -448,7 +457,7 @@ export function initOverlay(): void {
 
     // Miniboard if FEN available
     if (event.details.fen) {
-      parts.push(renderMiniboard(event.details.fen));
+      parts.push(renderMiniboard(event.details.fen, boardSize));
     }
 
     // Metadata
@@ -552,10 +561,19 @@ export function initOverlay(): void {
     if (url) window.open(url, "_blank");
   });
 
-  // Dismiss tooltip when clicking outside the overlay host
+  // Collapse panel and dismiss tooltip when clicking outside the overlay host
   document.addEventListener("click", (e) => {
-    if (activeTooltipIdx !== null && !(e.target as HTMLElement).closest(`#${HOST_ID}`)) {
+    if ((e.target as HTMLElement).closest(`#${HOST_ID}`)) return;
+
+    if (activeTooltipIdx !== null) {
       dismissTooltip();
+    }
+
+    if (!collapsed) {
+      collapsed = true;
+      panel.style.display = "none";
+      bubble.style.display = "flex";
+      updateBubble();
     }
   });
 
@@ -612,13 +630,18 @@ export function initOverlay(): void {
     renderHeader();
   });
 
-  // Load initial events
-  chrome.storage.local.get(STORAGE_KEY, (data) => {
+  // Load initial events and board size
+  chrome.storage.local.get([STORAGE_KEY, BOARD_SIZE_KEY], (data) => {
+    boardSize = data[BOARD_SIZE_KEY] ?? DEFAULT_BOARD_SIZE;
     render(data[STORAGE_KEY] ?? []);
   });
 
-  // Live updates for events
+  // Live updates for events and board size
   chrome.storage.onChanged.addListener((changes) => {
+    if (changes[BOARD_SIZE_KEY]) {
+      boardSize = changes[BOARD_SIZE_KEY].newValue ?? DEFAULT_BOARD_SIZE;
+      dismissTooltip();
+    }
     if (changes[STORAGE_KEY]) {
       const newEvents: ChessEvent[] = changes[STORAGE_KEY].newValue ?? [];
       render(newEvents);

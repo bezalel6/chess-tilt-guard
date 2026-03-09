@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ChessEvent, Platform, StoredUsernames, UsernameEntry, UserSettings } from "./types";
+import { ChessEvent, Platform, UserSettings } from "./types";
 import {
   STORAGE_KEY,
-  OVERLAY_VISIBLE_KEY,
-  MAX_STACK_SIZE_KEY,
-  DEFAULT_MAX_STACK_SIZE,
-  USERNAMES_KEY,
   SETTINGS_KEY,
+  BOARD_SIZE_KEY,
+  DEFAULT_BOARD_SIZE,
   DEFAULT_LOSS_STREAK_THRESHOLD,
   DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
   DEFAULT_PUZZLE_RUSH_MIN_SCORE,
@@ -93,6 +91,10 @@ function buildMetaLine(event: ChessEvent): string {
       const formatted = formatTimeControl(timeControl);
       if (formatted) parts.push(formatted);
     }
+  }
+
+  if (extra?.playerRating) {
+    parts.push(String(extra.playerRating));
   }
 
   if (event.details.endReason) {
@@ -190,7 +192,8 @@ function buildTooltipMeta(event: ChessEvent): string[] {
 const BoardTooltip: React.FC<{
   event: ChessEvent;
   anchorRect: DOMRect;
-}> = ({ event, anchorRect }) => {
+  boardSize: number;
+}> = ({ event, anchorRect, boardSize }) => {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number } | null>(null);
 
@@ -214,7 +217,7 @@ const BoardTooltip: React.FC<{
 
   if (!hasContent) return null;
 
-  const miniboardHtml = hasFen ? renderMiniboard(event.details.fen!) : "";
+  const miniboardHtml = hasFen ? renderMiniboard(event.details.fen!, boardSize) : "";
 
   return (
     <div
@@ -375,17 +378,9 @@ const Popup: React.FC = () => {
     rushScoreAfterStreak: 0,
     rushScoreRequired: DEFAULT_PUZZLE_RUSH_MIN_SCORE,
   });
-  const [overlayVisible, setOverlayVisible] = useState(true);
-  const [maxStackSize, setMaxStackSize] = useState(DEFAULT_MAX_STACK_SIZE);
-  const [lossThreshold, setLossThreshold] = useState(DEFAULT_LOSS_STREAK_THRESHOLD);
-  const [puzzleWins, setPuzzleWins] = useState(DEFAULT_PUZZLE_WINS_TO_UNBLOCK);
-  const [rushMinScore, setRushMinScore] = useState(DEFAULT_PUZZLE_RUSH_MIN_SCORE);
+  const [boardSize, setBoardSize] = useState(DEFAULT_BOARD_SIZE);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [expandedAnchorRect, setExpandedAnchorRect] = useState<DOMRect | null>(null);
-  const [usernames, setUsernames] = useState<StoredUsernames>({});
-  const [editChessCom, setEditChessCom] = useState("");
-  const [editLichess, setEditLichess] = useState("");
-  const [accountsOpen, setAccountsOpen] = useState(false);
 
   const expandedEvent = expandedEventId
     ? events.find((e) => e.id === expandedEventId) ?? null
@@ -393,7 +388,6 @@ const Popup: React.FC = () => {
 
   const handleToggleBoard = (event: ChessEvent, rect: DOMRect) => {
     if (expandedEventId === event.id) {
-      // Toggle off
       setExpandedEventId(null);
       setExpandedAnchorRect(null);
     } else {
@@ -404,24 +398,16 @@ const Popup: React.FC = () => {
 
   useEffect(() => {
     chrome.storage.local.get(
-      [STORAGE_KEY, OVERLAY_VISIBLE_KEY, MAX_STACK_SIZE_KEY, USERNAMES_KEY, SETTINGS_KEY],
+      [STORAGE_KEY, SETTINGS_KEY, BOARD_SIZE_KEY],
       (data) => {
         const stored = data[STORAGE_KEY] ?? [];
         const settings: UserSettings | undefined = data[SETTINGS_KEY];
         const lt = settings?.lossStreakThreshold ?? DEFAULT_LOSS_STREAK_THRESHOLD;
         const pw = settings?.puzzleWinsToUnblock ?? DEFAULT_PUZZLE_WINS_TO_UNBLOCK;
         const rms = settings?.puzzleRushMinScore ?? DEFAULT_PUZZLE_RUSH_MIN_SCORE;
-        setLossThreshold(lt);
-        setPuzzleWins(pw);
-        setRushMinScore(rms);
         setEvents(stored);
         setBlockingState(computeBlockingState(stored, lt, pw, rms));
-        setOverlayVisible(data[OVERLAY_VISIBLE_KEY] !== false);
-        setMaxStackSize(data[MAX_STACK_SIZE_KEY] ?? DEFAULT_MAX_STACK_SIZE);
-        const storedUsernames: StoredUsernames = data[USERNAMES_KEY] ?? {};
-        setUsernames(storedUsernames);
-        setEditChessCom(storedUsernames["chess.com"]?.username ?? "");
-        setEditLichess(storedUsernames.lichess?.username ?? "");
+        setBoardSize(data[BOARD_SIZE_KEY] ?? DEFAULT_BOARD_SIZE);
       }
     );
 
@@ -435,21 +421,12 @@ const Popup: React.FC = () => {
           const lt = s?.lossStreakThreshold ?? DEFAULT_LOSS_STREAK_THRESHOLD;
           const pw = s?.puzzleWinsToUnblock ?? DEFAULT_PUZZLE_WINS_TO_UNBLOCK;
           const rms = s?.puzzleRushMinScore ?? DEFAULT_PUZZLE_RUSH_MIN_SCORE;
-          setLossThreshold(lt);
-          setPuzzleWins(pw);
-          setRushMinScore(rms);
           setEvents(evts);
           setBlockingState(computeBlockingState(evts, lt, pw, rms));
         });
       }
-      if (changes[OVERLAY_VISIBLE_KEY]) {
-        setOverlayVisible(changes[OVERLAY_VISIBLE_KEY].newValue !== false);
-      }
-      if (changes[USERNAMES_KEY]) {
-        const updated: StoredUsernames = changes[USERNAMES_KEY].newValue ?? {};
-        setUsernames(updated);
-        setEditChessCom(updated["chess.com"]?.username ?? "");
-        setEditLichess(updated.lichess?.username ?? "");
+      if (changes[BOARD_SIZE_KEY]) {
+        setBoardSize(changes[BOARD_SIZE_KEY].newValue ?? DEFAULT_BOARD_SIZE);
       }
     };
     chrome.storage.onChanged.addListener(listener);
@@ -459,50 +436,18 @@ const Popup: React.FC = () => {
   const clearHistory = () => {
     chrome.storage.local.remove(STORAGE_KEY);
     setEvents([]);
-    setBlockingState(computeBlockingState([], lossThreshold, puzzleWins, rushMinScore));
+    setBlockingState(
+      computeBlockingState(
+        [],
+        DEFAULT_LOSS_STREAK_THRESHOLD,
+        DEFAULT_PUZZLE_WINS_TO_UNBLOCK,
+        DEFAULT_PUZZLE_RUSH_MIN_SCORE
+      )
+    );
   };
 
-  const toggleOverlay = () => {
-    const next = !overlayVisible;
-    chrome.storage.local.set({ [OVERLAY_VISIBLE_KEY]: next });
-    setOverlayVisible(next);
-  };
-
-  const updateMaxStackSize = (value: number) => {
-    const clamped = Math.max(5, Math.min(50, value));
-    setMaxStackSize(clamped);
-    chrome.storage.local.set({ [MAX_STACK_SIZE_KEY]: clamped });
-  };
-
-  const updateSettings = (lt: number, pw: number, rms: number) => {
-    const settings: UserSettings = {
-      lossStreakThreshold: Math.max(1, Math.min(10, lt)),
-      puzzleWinsToUnblock: Math.max(1, Math.min(10, pw)),
-      puzzleRushMinScore: Math.max(1, Math.min(50, rms)),
-    };
-    setLossThreshold(settings.lossStreakThreshold);
-    setPuzzleWins(settings.puzzleWinsToUnblock);
-    setRushMinScore(settings.puzzleRushMinScore);
-    setBlockingState(computeBlockingState(events, settings.lossStreakThreshold, settings.puzzleWinsToUnblock, settings.puzzleRushMinScore));
-    chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-  };
-
-  const saveUsername = (platform: "chess.com" | "lichess", value: string) => {
-    const trimmed = value.trim().toLowerCase();
-    if (!trimmed) return;
-    const entry: UsernameEntry = { username: trimmed, source: "manual" };
-    const updated: StoredUsernames = { ...usernames, [platform]: entry };
-    chrome.storage.local.set({ [USERNAMES_KEY]: updated });
-    setUsernames(updated);
-  };
-
-  const clearUsername = (platform: "chess.com" | "lichess") => {
-    const updated: StoredUsernames = { ...usernames };
-    delete updated[platform];
-    chrome.storage.local.set({ [USERNAMES_KEY]: updated });
-    setUsernames(updated);
-    if (platform === "chess.com") setEditChessCom("");
-    else setEditLichess("");
+  const openSettings = () => {
+    chrome.runtime.openOptionsPage();
   };
 
   return (
@@ -528,276 +473,21 @@ const Popup: React.FC = () => {
           Chess Tilt Guard
         </span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button
-            onClick={toggleOverlay}
-            title={overlayVisible ? "Hide overlay" : "Show overlay"}
-            style={{
-              ...btnStyle,
-              color: overlayVisible ? "#4caf50" : "#666",
-              borderColor: overlayVisible
-                ? "rgba(76, 175, 80, 0.4)"
-                : "rgba(255,255,255,0.2)",
-            }}
-          >
-            Overlay {overlayVisible ? "On" : "Off"}
-          </button>
           <button onClick={clearHistory} style={btnStyle}>
             Clear
           </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "6px 12px",
-          borderBottom: "1px solid #2d2d44",
-          fontSize: 11,
-          color: "#888",
-        }}
-      >
-        <span>Max events</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
-            onClick={() => updateMaxStackSize(maxStackSize - 5)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
+            onClick={openSettings}
+            title="Settings"
+            style={{
+              ...btnStyle,
+              padding: "2px 6px",
+              fontSize: 13,
+            }}
           >
-            &minus;
-          </button>
-          <span style={{ color: "#e0e0e0", minWidth: 20, textAlign: "center" }}>
-            {maxStackSize}
-          </span>
-          <button
-            onClick={() => updateMaxStackSize(maxStackSize + 5)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            +
+            &#9881;
           </button>
         </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "6px 12px",
-          borderBottom: "1px solid #2d2d44",
-          fontSize: 11,
-          color: "#888",
-        }}
-      >
-        <span>Losses to block</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button
-            onClick={() => updateSettings(lossThreshold - 1, puzzleWins, rushMinScore)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            &minus;
-          </button>
-          <span style={{ color: "#e0e0e0", minWidth: 20, textAlign: "center" }}>
-            {lossThreshold}
-          </span>
-          <button
-            onClick={() => updateSettings(lossThreshold + 1, puzzleWins, rushMinScore)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "6px 12px",
-          borderBottom: "1px solid #2d2d44",
-          fontSize: 11,
-          color: "#888",
-        }}
-      >
-        <span>Puzzles to unblock</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button
-            onClick={() => updateSettings(lossThreshold, puzzleWins - 1, rushMinScore)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            &minus;
-          </button>
-          <span style={{ color: "#e0e0e0", minWidth: 20, textAlign: "center" }}>
-            {puzzleWins}
-          </span>
-          <button
-            onClick={() => updateSettings(lossThreshold, puzzleWins + 1, rushMinScore)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "6px 12px",
-          borderBottom: "1px solid #2d2d44",
-          fontSize: 11,
-          color: "#888",
-        }}
-      >
-        <span>Rush score to unblock</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button
-            onClick={() => updateSettings(lossThreshold, puzzleWins, rushMinScore - 1)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            &minus;
-          </button>
-          <span style={{ color: "#e0e0e0", minWidth: 20, textAlign: "center" }}>
-            {rushMinScore}
-          </span>
-          <button
-            onClick={() => updateSettings(lossThreshold, puzzleWins, rushMinScore + 1)}
-            style={{ ...btnStyle, padding: "1px 6px", fontSize: 10 }}
-          >
-            +
-          </button>
-        </div>
-      </div>
-
-      {/* Accounts section */}
-      <div style={{ borderBottom: "1px solid #2d2d44" }}>
-        <button
-          onClick={() => setAccountsOpen(!accountsOpen)}
-          style={{
-            width: "100%",
-            background: "none",
-            border: "none",
-            color: "#888",
-            fontSize: 11,
-            padding: "6px 12px",
-            cursor: "pointer",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>Accounts</span>
-          <span style={{ fontSize: 9 }}>{accountsOpen ? "\u25B2" : "\u25BC"}</span>
-        </button>
-        {accountsOpen && (
-          <div style={{ padding: "4px 12px 8px" }}>
-            {(
-              [
-                {
-                  platform: "chess.com" as const,
-                  value: editChessCom,
-                  onChange: setEditChessCom,
-                  entry: usernames["chess.com"],
-                  logo: CHESS_COM_LOGO,
-                },
-                {
-                  platform: "lichess" as const,
-                  value: editLichess,
-                  onChange: setEditLichess,
-                  entry: usernames.lichess,
-                  logo: LICHESS_LOGO,
-                },
-              ] as const
-            ).map(({ platform, value, onChange, entry, logo }) => {
-              const isManual = entry?.source === "manual";
-              const isAuto = entry?.source === "auto";
-              const hasEdited = value.trim().toLowerCase() !== (entry?.username ?? "");
-
-              return (
-                <div key={platform} style={{ marginBottom: 8 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <div
-                      style={{ flexShrink: 0, display: "flex", alignItems: "center" }}
-                      dangerouslySetInnerHTML={{ __html: logo }}
-                    />
-                    <input
-                      type="text"
-                      value={value}
-                      onChange={(e) => onChange(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && hasEdited && value.trim()) {
-                          saveUsername(platform, value);
-                        }
-                      }}
-                      placeholder={`${platform} username`}
-                      style={{
-                        flex: 1,
-                        background: "#16162b",
-                        border: `1px solid ${isManual ? "rgba(76, 175, 80, 0.4)" : "#3d3d5c"}`,
-                        borderRadius: 4,
-                        color: isAuto && !hasEdited ? "#888" : "#e0e0e0",
-                        fontStyle: isAuto && !hasEdited ? "italic" : "normal",
-                        fontSize: 11,
-                        padding: "3px 6px",
-                        outline: "none",
-                        minWidth: 0,
-                      }}
-                    />
-                    {/* Show Save when user has typed a different value */}
-                    {hasEdited && value.trim() ? (
-                      <button
-                        onClick={() => saveUsername(platform, value)}
-                        style={{
-                          ...btnStyle,
-                          fontSize: 10,
-                          padding: "2px 6px",
-                          color: "#4caf50",
-                          borderColor: "rgba(76, 175, 80, 0.4)",
-                        }}
-                      >
-                        Save
-                      </button>
-                    ) : isManual ? (
-                      <button
-                        onClick={() => clearUsername(platform)}
-                        style={{ ...btnStyle, fontSize: 10, padding: "2px 6px" }}
-                      >
-                        Clear
-                      </button>
-                    ) : (
-                      /* Auto or empty — no button needed, but keep spacing */
-                      <div style={{ width: 38 }} />
-                    )}
-                  </div>
-                  {/* Status label */}
-                  {entry && !hasEdited && (
-                    <div
-                      style={{
-                        fontSize: 9,
-                        color: isManual ? "#4caf50" : "#666",
-                        marginTop: 2,
-                        marginLeft: 22,
-                      }}
-                    >
-                      {isManual ? "manual override" : "auto-detected"}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div style={{ fontSize: 9, color: "#555", marginTop: 0 }}>
-              Type a username and save to override auto-detection.
-            </div>
-          </div>
-        )}
       </div>
 
       <BlockingBanner state={blockingState} />
@@ -844,7 +534,7 @@ const Popup: React.FC = () => {
         />
       )}
       {expandedEvent && expandedAnchorRect && (
-        <BoardTooltip event={expandedEvent} anchorRect={expandedAnchorRect} />
+        <BoardTooltip event={expandedEvent} anchorRect={expandedAnchorRect} boardSize={boardSize} />
       )}
     </div>
   );
