@@ -515,7 +515,7 @@ export function initOverlay(): void {
     activeTooltipIdx = null;
   }
 
-  function showTooltip(idx: number, anchorEl: HTMLElement): void {
+  function showTooltip(idx: number, _anchorEl: HTMLElement): void {
     const event = currentEvents[idx];
     if (!event) return;
 
@@ -526,11 +526,10 @@ export function initOverlay(): void {
     tooltip.classList.add("visible");
     activeTooltipIdx = idx;
 
-    // Position to the left of the panel
+    // Anchor consistently to the top-left of the panel
     const panelRect = panel.getBoundingClientRect();
-    const anchorRect = anchorEl.getBoundingClientRect();
     tooltip.style.right = `${window.innerWidth - panelRect.left + 8}px`;
-    tooltip.style.top = `${anchorRect.top}px`;
+    tooltip.style.top = `${panelRect.top}px`;
   }
 
   // Unified click handler for the list

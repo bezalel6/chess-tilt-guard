@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ChessEvent, Platform, UserSettings } from "./types";
 import {
@@ -189,51 +189,27 @@ function buildTooltipMeta(event: ChessEvent): string[] {
   return lines;
 }
 
-const BoardTooltip: React.FC<{
+const BoardSidePanel: React.FC<{
   event: ChessEvent;
-  anchorRect: DOMRect;
   boardSize: number;
-}> = ({ event, anchorRect, boardSize }) => {
-  const tooltipRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number } | null>(null);
-
+}> = ({ event, boardSize }) => {
   const hasFen = !!event.details.fen;
   const metaLines = buildTooltipMeta(event);
-  const hasContent = hasFen || metaLines.length > 0;
-
-  // Measure tooltip after render and clamp to viewport
-  useEffect(() => {
-    if (!tooltipRef.current || !hasContent) {
-      setPos(null);
-      return;
-    }
-    const tooltipH = tooltipRef.current.offsetHeight;
-    const viewportH = window.innerHeight;
-    const cardCenter = anchorRect.top + anchorRect.height / 2;
-    let top = cardCenter - tooltipH / 2;
-    top = Math.max(4, Math.min(top, viewportH - tooltipH - 4));
-    setPos({ top });
-  }, [anchorRect, hasContent]);
-
-  if (!hasContent) return null;
 
   const miniboardHtml = hasFen ? renderMiniboard(event.details.fen!, boardSize) : "";
 
   return (
     <div
-      ref={tooltipRef}
       style={{
-        position: "fixed",
-        left: 8,
-        top: pos ? pos.top : -9999,
-        visibility: pos ? "visible" : "hidden",
-        background: "#1e1e36",
-        border: "1px solid #3d3d5c",
-        borderRadius: 6,
-        boxShadow: "0 6px 24px rgba(0, 0, 0, 0.6)",
+        width: boardSize + 16,
+        flexShrink: 0,
+        background: "#16162a",
+        borderRight: "1px solid #2d2d44",
         padding: 8,
-        zIndex: 999999,
-        maxWidth: 220,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        overflowY: "auto",
       }}
     >
       {miniboardHtml && (
@@ -244,7 +220,6 @@ const BoardTooltip: React.FC<{
           style={{
             fontSize: 10,
             color: "#bbb",
-            marginTop: hasFen ? 6 : 0,
             lineHeight: 1.5,
           }}
         >
@@ -269,13 +244,12 @@ const BoardTooltip: React.FC<{
 const EventCard: React.FC<{
   event: ChessEvent;
   isExpanded: boolean;
-  onToggleBoard: (event: ChessEvent, rect: DOMRect) => void;
+  onToggleBoard: (event: ChessEvent) => void;
 }> = ({ event, isExpanded, onToggleBoard }) => {
   let colors = RESULT_COLORS[event.result] ?? RESULT_COLORS.draw;
   if (event.type === "puzzle_rush") {
     colors = { border: "#ffa726", bg: "rgba(255, 167, 38, 0.08)" };
   }
-  const cardRef = useRef<HTMLDivElement>(null);
   const hasFen = !!event.details.fen;
 
   const handleClick = () => {
@@ -286,13 +260,11 @@ const EventCard: React.FC<{
 
   const handleBoardClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const rect = cardRef.current?.getBoundingClientRect();
-    if (rect) onToggleBoard(event, rect);
+    onToggleBoard(event);
   };
 
   return (
     <div
-      ref={cardRef}
       onClick={handleClick}
       style={{
         padding: "8px 12px",
@@ -380,20 +352,13 @@ const Popup: React.FC = () => {
   });
   const [boardSize, setBoardSize] = useState(DEFAULT_BOARD_SIZE);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
-  const [expandedAnchorRect, setExpandedAnchorRect] = useState<DOMRect | null>(null);
 
   const expandedEvent = expandedEventId
     ? events.find((e) => e.id === expandedEventId) ?? null
     : null;
 
-  const handleToggleBoard = (event: ChessEvent, rect: DOMRect) => {
-    if (expandedEventId === event.id) {
-      setExpandedEventId(null);
-      setExpandedAnchorRect(null);
-    } else {
-      setExpandedEventId(event.id);
-      setExpandedAnchorRect(rect);
-    }
+  const handleToggleBoard = (event: ChessEvent) => {
+    setExpandedEventId(expandedEventId === event.id ? null : event.id);
   };
 
   useEffect(() => {
@@ -450,92 +415,78 @@ const Popup: React.FC = () => {
     chrome.runtime.openOptionsPage();
   };
 
+  const MAIN_WIDTH = 360;
+
   return (
     <div
       style={{
-        width: 360,
+        display: "flex",
         fontFamily: "system-ui, sans-serif",
         fontSize: 13,
         background: "#1a1a2e",
         color: "#e0e0e0",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "10px 12px",
-          borderBottom: "1px solid #2d2d44",
-        }}
-      >
-        <span style={{ fontWeight: 700, fontSize: 14, color: "#fff" }}>
-          Chess Tilt Guard
-        </span>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button onClick={clearHistory} style={btnStyle}>
-            Clear
-          </button>
-          <button
-            onClick={openSettings}
-            title="Settings"
-            style={{
-              ...btnStyle,
-              padding: "2px 6px",
-              fontSize: 13,
-            }}
-          >
-            &#9881;
-          </button>
+      {expandedEvent && (
+        <BoardSidePanel event={expandedEvent} boardSize={boardSize} />
+      )}
+      <div style={{ width: MAIN_WIDTH, flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "10px 12px",
+            borderBottom: "1px solid #2d2d44",
+          }}
+        >
+          <span style={{ fontWeight: 700, fontSize: 14, color: "#fff" }}>
+            Chess Tilt Guard
+          </span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button onClick={clearHistory} style={btnStyle}>
+              Clear
+            </button>
+            <button
+              onClick={openSettings}
+              title="Settings"
+              style={{
+                ...btnStyle,
+                padding: "2px 6px",
+                fontSize: 13,
+              }}
+            >
+              &#9881;
+            </button>
+          </div>
+        </div>
+
+        <BlockingBanner state={blockingState} />
+
+        <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          {events.length === 0 ? (
+            <div
+              style={{
+                padding: 28,
+                textAlign: "center",
+                color: "#666",
+                fontSize: 12,
+              }}
+            >
+              No events yet. Play a game or solve a puzzle.
+            </div>
+          ) : (
+            events.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                isExpanded={expandedEventId === event.id}
+                onToggleBoard={handleToggleBoard}
+              />
+            ))
+          )}
         </div>
       </div>
-
-      <BlockingBanner state={blockingState} />
-
-      <div style={{ maxHeight: 420, overflowY: "auto" }}>
-        {events.length === 0 ? (
-          <div
-            style={{
-              padding: 28,
-              textAlign: "center",
-              color: "#666",
-              fontSize: 12,
-            }}
-          >
-            No events yet. Play a game or solve a puzzle.
-          </div>
-        ) : (
-          events.map((event) => (
-            <EventCard
-              key={event.id}
-              event={event}
-              isExpanded={expandedEventId === event.id}
-              onToggleBoard={handleToggleBoard}
-            />
-          ))
-        )}
-      </div>
-      {/* Backdrop to dismiss tooltip */}
-      {expandedEvent && expandedAnchorRect && (
-        <div
-          onClick={() => {
-            setExpandedEventId(null);
-            setExpandedAnchorRect(null);
-          }}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 999998,
-            background: "transparent",
-          }}
-        />
-      )}
-      {expandedEvent && expandedAnchorRect && (
-        <BoardTooltip event={expandedEvent} anchorRect={expandedAnchorRect} boardSize={boardSize} />
-      )}
     </div>
   );
 };
